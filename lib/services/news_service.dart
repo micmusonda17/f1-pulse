@@ -16,9 +16,9 @@ class NewsService {
 
   Future<List<NewsItem>> getNews(NewsSource source) async {
     if (kIsWeb) {
-      // Browsers block web pages from reading the news sites (CORS,
-      // Chapter 2). But a page may always read files from its own
-      // address, so the website reads the copy GitHub saves next to it.
+      // Browsers block web pages from reading the news sites (CORS).
+      // But a page may always read files from its own address, so the
+      // website reads the copy GitHub saves next to it.
       return _download(Uri.base.resolve('news/${source.id}.xml'), source);
     }
     try {

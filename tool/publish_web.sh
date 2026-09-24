@@ -33,7 +33,7 @@ echo "Signed in as $OWNER."
 echo
 echo "== 2. The website build instructions for GitHub =="
 # GitHub runs any workflow file it finds in .github/workflows. This one
-# builds the website on every push. It is explained in Chapter 36.
+# builds the website on every push and every 30 minutes.
 if ! cmp -s tool/deploy-web.yml .github/workflows/deploy-web.yml; then
   mkdir -p .github/workflows
   cp tool/deploy-web.yml .github/workflows/deploy-web.yml
@@ -91,7 +91,7 @@ RUN_ID=$(gh run list --repo "$OWNER/$REPO" --workflow deploy-web.yml --limit 1 \
   --json databaseId --jq '.[0].databaseId')
 if [ -n "$RUN_ID" ]; then
   gh run watch "$RUN_ID" --repo "$OWNER/$REPO" --exit-status \
-    || { echo "The build failed. Send Claude the output above."; exit 1; }
+    || { echo "The build failed. See the output above, or the Actions tab on GitHub."; exit 1; }
 fi
 
 echo

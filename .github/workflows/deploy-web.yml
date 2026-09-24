@@ -1,6 +1,6 @@
 # Builds the web version of F1 Pulse and puts it on GitHub Pages every
 # time you push to the main branch, and every 30 minutes to refresh the
-# news. Explained in Chapters 36 and 37 of the Bible.
+# news feeds that the web version reads (bin/fetch_news.dart).
 name: Deploy web version
 
 on:

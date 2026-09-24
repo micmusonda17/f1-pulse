@@ -7,9 +7,8 @@ import '../models/openf1_models.dart';
 
 /// Finds the index of the first point whose time is AFTER [time].
 ///
-/// This is the binary search from Chapter 20 of your Study Bible. The list
-/// is sorted by time, so we can keep cutting it in half instead of checking
-/// every point. With 1,000 points that is about 10 checks instead of 1,000.
+/// A binary search: the list is sorted by time, so we can keep cutting it
+/// in half instead of checking every point. With 1,000 points that is about 10 checks instead of 1,000.
 int firstIndexAfter(List<CarLocation> points, DateTime time) {
   var low = 0;
   var high = points.length;

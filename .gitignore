@@ -47,8 +47,9 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# The Build Bible is your study guide, not part of the app.
-F1_Pulse_Build_Bible.pdf
-
-# Local copies of the news for `flutter run -d chrome` (Chapter 37).
+# Local copies of the news feeds for `flutter run -d chrome`
+# (make them with: dart run bin/fetch_news.dart web/news).
 /web/news/
+
+# Screenshots taken with `flutter screenshot`
+flutter_*.png

@@ -1,7 +1,7 @@
 #!/bin/bash
 # F1 Pulse: get the app running on the iPhone simulator.
 # Run it with:  bash ~/Developer/f1-pulse/tool/run_iphone.sh
-# Logs go to build/checks/ so Claude can read them if something fails.
+# Logs go to build/checks/ if something fails.
 
 set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -71,7 +71,7 @@ if ! flutter build ios --simulator --debug 2>&1 | tee "$LOG/12_build_ios_sim.txt
   fi
   grep -iE "error|fatal" "$LOG/12b_build_ios_verbose.txt" | tail -15
   echo
-  echo "Reply 'done' to Claude and it will read build/checks/12b_build_ios_verbose.txt."
+  echo "The full Xcode output is in build/checks/12b_build_ios_verbose.txt."
   exit 1
 fi
 

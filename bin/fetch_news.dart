@@ -1,6 +1,6 @@
 // Saves a copy of every news feed in lib/config.dart into one folder.
 //
-// Browsers do not let a web page read the news sites (CORS, Chapter 2),
+// Browsers do not let a web page read the news sites (CORS),
 // but a page may always read files from its own address. So every 30
 // minutes, GitHub runs this script and publishes the copies next to the
 // website, where the web version of F1 Pulse can read them.
