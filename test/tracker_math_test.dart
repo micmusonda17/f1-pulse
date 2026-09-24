@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitbeat/models/openf1_models.dart';
+import 'package:pitbeat/screens/tracker_screen.dart';
 import 'package:pitbeat/tracker/tracker_math.dart';
+import 'package:pitbeat/utils/formatting.dart';
 
 /// A made-up location point, [seconds] after midday.
 CarLocation point(int seconds, double x, double y) => CarLocation(
@@ -110,6 +112,62 @@ void main() {
       expect(lapAt(timeline, at(45)), 1);
       expect(lapAt(timeline, at(90)), 2); // Exactly at the start counts
       expect(lapAt(timeline, at(500)), 3);
+    });
+  });
+
+  group('practice and qualifying', () {
+    Lap timed(int driver, int number, int startSeconds, double? seconds) =>
+        Lap(
+          driverNumber: driver,
+          lapNumber: number,
+          start: at(startSeconds),
+          duration: seconds,
+        );
+
+    final laps = [
+      timed(1, 1, 0, 95.5), // Ends at 95.5 seconds
+      timed(1, 2, 96, 91.2), // Ends at 187.2 seconds: car 1's best
+      timed(44, 1, 10, 92.0), // Ends at 102 seconds
+      timed(44, 2, 103, null), // Went into the pits: no time
+    ];
+
+    test('bestLapsAt only counts laps that have finished', () {
+      expect(bestLapsAt(laps, at(100)), {1: 95.5});
+      expect(bestLapsAt(laps, at(150)), {1: 95.5, 44: 92.0});
+      expect(bestLapsAt(laps, at(200)), {1: 91.2, 44: 92.0});
+    });
+
+    test('fastestLap picks the quickest lap that has a time', () {
+      final fastest = fastestLap(laps);
+      expect(fastest?.driverNumber, 1);
+      expect(fastest?.lapNumber, 2);
+      expect(fastestLap([timed(1, 1, 0, null)]), isNull);
+    });
+
+    test('a car at (0, 0) is in its garage', () {
+      final track = [
+        point(0, 0, 0), // In the garage
+        point(1, 0, 0), // Still in the garage
+        point(2, 50, 20), // Out on track
+        point(3, 60, 20),
+      ];
+      expect(isInGarageAt(track, at(0, 500)), isTrue);
+      expect(isInGarageAt(track, at(1, 500)), isTrue); // Just leaving
+      expect(isInGarageAt(track, at(2, 500)), isFalse);
+    });
+  });
+
+  group('the timing screen', () {
+    test('lap times look like the TV', () {
+      expect(formatLapTime(92.456), '1:32.456');
+      expect(formatLapTime(59.9996), '1:00.000'); // Never "0:60.000"
+      expect(formatMinutes(const Duration(minutes: 34, seconds: 12)), '34:12');
+    });
+
+    test('the fastest driver shows a time, everyone else a gap', () {
+      expect(lapTimeOrGap(92.456, 92.456), '1:32.456');
+      expect(lapTimeOrGap(92.69, 92.456), '+0.234');
+      expect(lapTimeOrGap(null, 92.456), 'No time');
     });
   });
 }

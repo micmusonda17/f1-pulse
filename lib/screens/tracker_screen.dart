@@ -62,14 +62,16 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
           final message = _controller.message;
           final lap = _controller.currentLap;
+          final timeLeft = _controller.timeLeft;
           return Column(
             children: [
               Expanded(
                 flex: 5,
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  // A Stack puts its children on top of each other: the
-                  // map first, then the lap counter in the top left corner.
+                  // A Stack puts its children on top of each other: the map
+                  // first, then the lap counter (races) or the session clock
+                  // (practice) in the top left corner.
                   child: Stack(
                     children: [
                       CustomPaint(
@@ -84,9 +86,21 @@ class _TrackerScreenState extends State<TrackerScreen> {
                         Positioned(
                           top: 0,
                           left: 0,
-                          child: LapCounter(
-                            lap: lap,
-                            total: _controller.totalLaps,
+                          child: MapBadge(
+                            label: 'LAP ',
+                            value: '$lap',
+                            suffix: _controller.totalLaps == null
+                                ? null
+                                : '/${_controller.totalLaps}',
+                          ),
+                        ),
+                      if (timeLeft != null)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: MapBadge(
+                            label: 'TIME LEFT ',
+                            value: formatMinutes(timeLeft),
                           ),
                         ),
                     ],
@@ -111,6 +125,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
                 child: Leaderboard(
                   order: _controller.runningOrder,
                   drivers: _controller.drivers,
+                  bestLaps: _controller.showsLapTimes
+                      ? _controller.bestLaps
+                      : null,
+                  inGarage: _controller.inGarage,
                 ),
               ),
             ],
@@ -197,17 +215,24 @@ class _TrackerScreenState extends State<TrackerScreen> {
   }
 }
 
-/// "LAP 23/51" in the corner of the map, like the TV graphic.
+/// A small box in the corner of the map, like the TV graphics:
+/// "LAP 23/51" in races, "TIME LEFT 34:12" in practice.
 /// Live races show just "LAP 23": nobody knows the last lap in advance.
-class LapCounter extends StatelessWidget {
-  const LapCounter({super.key, required this.lap, this.total});
+class MapBadge extends StatelessWidget {
+  const MapBadge({
+    super.key,
+    required this.label,
+    required this.value,
+    this.suffix,
+  });
 
-  final int lap;
-  final int? total;
+  final String label; // "LAP ", in red
+  final String value; // "23", big and bold
+  final String? suffix; // "/51", in grey. Optional.
 
   @override
   Widget build(BuildContext context) {
-    final lastLap = total;
+    final grey = suffix;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -218,21 +243,21 @@ class LapCounter extends StatelessWidget {
       child: Text.rich(
         TextSpan(
           children: [
-            const TextSpan(
-              text: 'LAP ',
-              style: TextStyle(
+            TextSpan(
+              text: label,
+              style: const TextStyle(
                 color: F1Colors.red,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.2,
               ),
             ),
             TextSpan(
-              text: '$lap',
+              text: value,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
-            if (lastLap != null)
+            if (grey != null)
               TextSpan(
-                text: '/$lastLap',
+                text: grey,
                 style: const TextStyle(
                   color: F1Colors.muted,
                   fontWeight: FontWeight.w700,
@@ -267,16 +292,33 @@ class LiveBadge extends StatelessWidget {
 
 /// The running order under the map.
 class Leaderboard extends StatelessWidget {
-  const Leaderboard({super.key, required this.order, required this.drivers});
+  const Leaderboard({
+    super.key,
+    required this.order,
+    required this.drivers,
+    this.bestLaps,
+    this.inGarage = const {},
+  });
 
   final List<int> order; // Driver numbers, leader first
   final Map<int, DriverInfo> drivers;
+  final Map<int, double>? bestLaps; // Practice and qualifying only
+  final Set<int> inGarage;
 
   @override
   Widget build(BuildContext context) {
     if (order.isEmpty) {
       return const Center(child: Text('Waiting for the running order'));
     }
+    final times = bestLaps;
+    // The fastest time so far: every gap is measured from it.
+    double? fastest;
+    if (times != null) {
+      for (final seconds in times.values) {
+        if (fastest == null || seconds < fastest) fastest = seconds;
+      }
+    }
+
     return ListView.builder(
       itemCount: order.length,
       itemBuilder: (context, index) {
@@ -307,13 +349,27 @@ class Leaderboard extends StatelessWidget {
             ],
           ),
           title: Text(driver?.fullName ?? 'Car $number'),
-          subtitle: Text(driver?.team ?? ''),
+          subtitle: Text(
+            inGarage.contains(number)
+                ? '${driver?.team ?? ''}  ·  In the garage'
+                : driver?.team ?? '',
+          ),
           trailing: Text(
-            driver?.acronym ?? '$number',
+            times == null
+                ? driver?.acronym ?? '$number'
+                : lapTimeOrGap(times[number], fastest),
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         );
       },
     );
   }
+}
+
+/// What the timing screen shows for one driver: the fastest driver's time
+/// ("1:32.456"), everyone else's gap to it ("+0.234"), or "No time".
+String lapTimeOrGap(double? seconds, double? fastest) {
+  if (seconds == null || fastest == null) return 'No time';
+  if (seconds == fastest) return formatLapTime(seconds);
+  return '+${(seconds - fastest).toStringAsFixed(3)}';
 }

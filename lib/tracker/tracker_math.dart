@@ -108,3 +108,47 @@ int? lapAt(List<LapMark> timeline, DateTime time) {
   }
   return lap;
 }
+
+/// Each driver's best lap time in seconds, counting only the laps that had
+/// finished by [time]. It is what the timing screen shows in practice and
+/// qualifying, where the order is about one fast lap, not who is ahead.
+Map<int, double> bestLapsAt(List<Lap> laps, DateTime time) {
+  final best = <int, double>{}; // Driver number -> seconds
+  for (final lap in laps) {
+    final start = lap.start;
+    final seconds = lap.duration;
+    if (start == null || seconds == null) continue; // No time for this lap
+    final end = start.add(Duration(milliseconds: (seconds * 1000).round()));
+    if (end.isAfter(time)) continue; // Still on this lap at [time]
+    final current = best[lap.driverNumber];
+    if (current == null || seconds < current) best[lap.driverNumber] = seconds;
+  }
+  return best;
+}
+
+/// The quickest complete lap in [laps], or null if none has a time.
+/// A fastest lap is flat out from start to finish, so it draws the
+/// cleanest track outline.
+Lap? fastestLap(List<Lap> laps) {
+  Lap? fastest;
+  for (final lap in laps) {
+    final seconds = lap.duration;
+    if (lap.start == null || seconds == null) continue;
+    final best = fastest?.duration;
+    if (best == null || seconds < best) fastest = lap;
+  }
+  return fastest;
+}
+
+/// True if the car was in its garage around [time].
+///
+/// While a car sits in the garage, OpenF1 reports it at exactly (0, 0).
+/// That happens a lot in practice. We hide those cars instead of drawing
+/// them in the middle of the map, or sliding across it on their way out.
+bool isInGarageAt(List<CarLocation> points, DateTime time) {
+  bool atZero(CarLocation point) => point.x == 0 && point.y == 0;
+  final after = firstIndexAfter(points, time);
+  if (after > 0 && atZero(points[after - 1])) return true;
+  if (after < points.length && atZero(points[after])) return true;
+  return false;
+}

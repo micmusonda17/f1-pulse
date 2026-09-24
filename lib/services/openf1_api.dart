@@ -146,6 +146,14 @@ class OpenF1Api {
         .toList();
   }
 
+  /// Every session in a year: practice, qualifying, sprints and races.
+  Future<List<OpenF1Session>> getSessions(int year) async {
+    final rows = await _get('sessions?year=$year');
+    return rows
+        .map((row) => OpenF1Session.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// The session happening now, or the one that happened most recently.
   Future<OpenF1Session?> getLatestSession() async {
     final rows = await _get('sessions?session_key=latest');
@@ -161,17 +169,11 @@ class OpenF1Api {
         .toList();
   }
 
-  /// Finds the OpenF1 race that starts at the same time as a Jolpica race.
-  /// This is how the two APIs get joined together.
-  Future<OpenF1Session?> findRace(DateTime raceStart) async {
-    final year = raceStart.toUtc().year;
-    final rows = await _get('sessions?year=$year&session_name=Race');
-    for (final row in rows) {
-      final session = OpenF1Session.fromJson(row as Map<String, dynamic>);
-      final gap = session.start.difference(raceStart).abs();
-      if (gap < const Duration(hours: 3)) return session;
-    }
-    return null;
+  /// Finds the OpenF1 session (any kind) that starts at the same time as a
+  /// session in the Jolpica calendar. This is how the two APIs get joined.
+  Future<OpenF1Session?> findSession(DateTime start) async {
+    final sessions = await getSessions(start.toUtc().year);
+    return closestSession(sessions, start);
   }
 
   // ------------------------------------------------------------------
@@ -195,11 +197,17 @@ class OpenF1Api {
     return Lap.fromJson(rows.first as Map<String, dynamic>);
   }
 
-  /// Laps for the lap counter: every lap of the session, or only the laps
-  /// numbered higher than [above] (live mode asks for just the new ones).
-  Future<List<Lap>> getLaps(int sessionKey, {int above = 0}) async {
+  /// Laps for the lap counter and lap times: every lap of the session, or
+  /// only the laps numbered higher than [above], or only the laps started
+  /// after [startedAfter]. Live mode uses those two to ask for new laps only.
+  Future<List<Lap>> getLaps(
+    int sessionKey, {
+    int above = 0,
+    DateTime? startedAfter,
+  }) async {
     var query = 'laps?session_key=$sessionKey';
     if (above > 0) query += '&lap_number>$above';
+    if (startedAfter != null) query += '&date_start>${_time(startedAfter)}';
     final rows = await _get(query);
     return rows
         .map((row) => Lap.fromJson(row as Map<String, dynamic>))

@@ -137,3 +137,20 @@ String formatChance(double chance) {
   if (percent < 1) return '<1%';
   return '$percent%';
 }
+
+/// A lap time in seconds as the timing screen shows it: 92.456 becomes
+/// "1:32.456". We work in whole milliseconds so 59.9996 becomes "1:00.000"
+/// and never "0:60.000".
+String formatLapTime(double seconds) {
+  final millis = (seconds * 1000).round();
+  final minutes = millis ~/ 60000;
+  final wholeSeconds = (millis % 60000) ~/ 1000;
+  final thousandths = (millis % 1000).toString().padLeft(3, '0');
+  return '$minutes:${twoDigits(wholeSeconds)}.$thousandths';
+}
+
+/// "34:12" for 34 minutes and 12 seconds: the session clock in practice.
+String formatMinutes(Duration duration) {
+  final d = duration.isNegative ? Duration.zero : duration;
+  return '${d.inMinutes}:${twoDigits(d.inSeconds % 60)}';
+}

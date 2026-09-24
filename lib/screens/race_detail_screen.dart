@@ -45,18 +45,18 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
     if (mounted) setState(() => _directory = directory);
   }
 
-  /// Finds this race in OpenF1 and opens the replay.
-  Future<void> _openReplay() async {
-    final start = widget.race.start;
+  /// Finds the session that started at [start] in OpenF1 (the race, or
+  /// practice, qualifying or a sprint) and opens its replay.
+  Future<void> _openReplay(DateTime? start) async {
     if (start == null) return;
 
     setState(() => _findingReplay = true);
     try {
-      final session = await OpenF1Api.instance.findRace(start);
+      final session = await OpenF1Api.instance.findSession(start);
       // We waited, so the user might have left this screen. Check first.
       if (!mounted) return;
       if (session == null) {
-        _showMessage('No replay for this race. OpenF1 covers 2023 onwards.');
+        _showMessage('No replay for this one. OpenF1 covers 2023 onwards.');
         return;
       }
       Navigator.push(
@@ -116,6 +116,8 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
               ),
             ),
           const SectionHeader('Weekend schedule (your time)'),
+          // Every session that is over has a play button: tap the row to
+          // watch it on the tracker.
           for (final session in race.sessions)
             ListTile(
               dense: true,
@@ -124,13 +126,26 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
                 size: 20,
               ),
               title: Text(session.name),
-              trailing: Text(formatDayTime(session.start)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(formatDayTime(session.start)),
+                  if (session.hasFinished) ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.play_circle_outline, size: 20),
+                  ],
+                ],
+              ),
+              onTap: session.hasFinished && !_findingReplay
+                  ? () => _openReplay(session.start)
+                  : null,
             ),
           if (race.isFinished) ...[
             Padding(
               padding: const EdgeInsets.all(16),
               child: FilledButton.icon(
-                onPressed: _findingReplay ? null : _openReplay,
+                onPressed:
+                    _findingReplay ? null : () => _openReplay(race.start),
                 icon: const Icon(Icons.play_arrow),
                 label: Text(
                   _findingReplay ? 'Finding the replay...' : 'Watch the replay',

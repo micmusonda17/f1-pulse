@@ -6,6 +6,11 @@ class WeekendSession {
 
   final String name;
   final DateTime start; // In UTC. Call toLocal() when you show it.
+
+  /// Like findLiveSession below, we call a session over two hours after it
+  /// starts. From then on its replay can be watched.
+  bool get hasFinished =>
+      DateTime.now().isAfter(start.add(const Duration(hours: 2)));
 }
 
 /// One Grand Prix on the calendar.

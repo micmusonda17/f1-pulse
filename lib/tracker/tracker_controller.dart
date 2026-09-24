@@ -75,11 +75,18 @@ class TrackerController extends ChangeNotifier {
   Map<int, Offset> get carPositions {
     final result = <int, Offset>{};
     for (final entry in _locations.entries) {
+      if (isInGarageAt(entry.value, clock)) continue; // Not on track
       final point = positionAt(entry.value, clock);
       if (point != null) result[entry.key] = point;
     }
     return result;
   }
+
+  /// Driver numbers of the cars sitting in their garage at [clock].
+  Set<int> get inGarage => {
+        for (final entry in _locations.entries)
+          if (isInGarageAt(entry.value, clock)) entry.key,
+      };
 
   /// Driver numbers in race order at [clock], leader first.
   List<int> get runningOrder => runningOrderAt(_positions, clock);
@@ -90,6 +97,24 @@ class TrackerController extends ChangeNotifier {
 
   /// Races and sprints count laps. OpenF1 calls both of them type "Race".
   bool get countsLaps => session.type == 'Race';
+
+  /// Practice and qualifying are about one fast lap, so the running order
+  /// shows each driver's best lap time instead.
+  bool get showsLapTimes => !countsLaps;
+
+  /// Each driver's best lap so far at [clock], in seconds. Empty in races.
+  Map<int, double> get bestLaps =>
+      showsLapTimes ? bestLapsAt(_laps, clock) : const {};
+
+  /// Practice only: how long the session has left at [clock], like the
+  /// clock on the TV. Null before the start and after the end.
+  Duration? get timeLeft {
+    if (session.type != 'Practice') return null;
+    if (clock.isBefore(session.start) || clock.isAfter(session.end)) {
+      return null;
+    }
+    return session.end.difference(clock);
+  }
 
   // ------------------------------------------------------------------
   // Starting up
@@ -116,10 +141,8 @@ class TrackerController extends ChangeNotifier {
       _positions.sort((a, b) => a.date.compareTo(b.date));
       if (_positions.isNotEmpty) _positionCursor = _positions.last.date;
 
-      if (countsLaps) {
-        _setMessage('Counting the laps');
-        await _loadLaps();
-      }
+      _setMessage(countsLaps ? 'Counting the laps' : 'Loading lap times');
+      await _updateLaps();
 
       _setMessage('Drawing the track');
       trackOutline = await _loadOutline();
@@ -161,6 +184,15 @@ class TrackerController extends ChangeNotifier {
       sessionsToTry.addAll(finished);
     }
 
+    // Practice and qualifying: the fastest lap of the session is flat out
+    // all the way round, so it draws the cleanest outline. (Lap 3 is often
+    // a slow lap into the pits there.)
+    final fastest = showsLapTimes ? fastestLap(_laps) : null;
+    if (fastest != null) {
+      final outline = await _outlineFromLap(session.sessionKey, fastest);
+      if (outline.isNotEmpty) return outline;
+    }
+
     final order = runningOrder;
     final driverNumbers = order.isNotEmpty ? order : drivers.keys.toList();
 
@@ -168,24 +200,31 @@ class TrackerController extends ChangeNotifier {
       for (final number in driverNumbers.take(3)) {
         // Lap 3: the car is up to speed and not leaving the pits.
         final lap = await _api.getLap(trySession.sessionKey, number, 3);
-        final lapStart = lap?.start;
-        final lapSeconds = lap?.duration;
-        if (lapStart == null || lapSeconds == null) continue;
-
-        final lapEnd =
-            lapStart.add(Duration(milliseconds: (lapSeconds * 1000).round()));
-        final points = await _api.getLocations(
-          trySession.sessionKey,
-          from: lapStart,
-          to: lapEnd,
-          driverNumber: number,
-        );
-        if (points.length > 50) {
-          return [for (final point in points) Offset(point.x, point.y)];
-        }
+        if (lap == null) continue;
+        final outline = await _outlineFromLap(trySession.sessionKey, lap);
+        if (outline.isNotEmpty) return outline;
       }
     }
     return []; // No outline. The painter will still draw the cars.
+  }
+
+  /// The points one car drove during one lap, joined up into an outline.
+  /// Empty if the lap has no time or OpenF1 has too few points for it.
+  Future<List<Offset>> _outlineFromLap(int sessionKey, Lap lap) async {
+    final lapStart = lap.start;
+    final lapSeconds = lap.duration;
+    if (lapStart == null || lapSeconds == null) return [];
+
+    final lapEnd =
+        lapStart.add(Duration(milliseconds: (lapSeconds * 1000).round()));
+    final points = await _api.getLocations(
+      sessionKey,
+      from: lapStart,
+      to: lapEnd,
+      driverNumber: lap.driverNumber,
+    );
+    if (points.length <= 50) return [];
+    return [for (final point in points) Offset(point.x, point.y)];
   }
 
   // ------------------------------------------------------------------
@@ -334,7 +373,7 @@ class TrackerController extends ChangeNotifier {
 
       final lapsDue =
           DateTime.now().difference(_lastLapPoll) >= AppConfig.lapPollEvery;
-      if (countsLaps && lapsDue) await _loadLaps();
+      if (lapsDue) await _updateLaps();
       message = null;
     } on ApiException catch (e) {
       message = e.message;
@@ -342,6 +381,10 @@ class TrackerController extends ChangeNotifier {
       _fetching = false;
     }
   }
+
+  /// Races download laps for the lap counter; practice and qualifying
+  /// download them for the lap times.
+  Future<void> _updateLaps() => countsLaps ? _loadLaps() : _loadLapTimes();
 
   /// Downloads laps for the lap counter. The first time that is every lap
   /// so far. After that (live only) it is just the laps numbered higher
@@ -359,6 +402,27 @@ class TrackerController extends ChangeNotifier {
       }
     } on ApiException {
       // The tracker works fine without the counter, so we just leave it out.
+    }
+  }
+
+  /// Downloads laps for the lap times in practice and qualifying.
+  ///
+  /// A lap only gets its time when it ends, so a live session cannot just
+  /// ask for laps it has not seen. Instead it asks for every lap started in
+  /// the last five minutes, and those replace the copies we already have.
+  Future<void> _loadLapTimes() async {
+    _lastLapPoll = DateTime.now();
+    final since = mode == TrackerMode.live && _laps.isNotEmpty
+        ? DateTime.now().toUtc().subtract(const Duration(minutes: 5))
+        : null;
+    try {
+      final laps = await _api.getLaps(session.sessionKey, startedAfter: since);
+      String keyOf(Lap lap) => '${lap.driverNumber}-${lap.lapNumber}';
+      final fresh = {for (final lap in laps) keyOf(lap)};
+      _laps.removeWhere((lap) => fresh.contains(keyOf(lap)));
+      _laps.addAll(laps);
+    } on ApiException {
+      // No lap times this time. The map and the order still work.
     }
   }
 

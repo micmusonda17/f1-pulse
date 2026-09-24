@@ -222,6 +222,35 @@ void main() {
     });
   });
 
+  group('closestSession', () {
+    OpenF1Session practice(int key, String name, DateTime start) =>
+        OpenF1Session(
+          sessionKey: key,
+          meetingKey: 1,
+          name: name,
+          type: 'Practice',
+          location: 'Baku',
+          country: 'Azerbaijan',
+          start: start,
+          end: start.add(const Duration(hours: 1)),
+          isCancelled: false,
+        );
+
+    final weekend = [
+      practice(1, 'Practice 1', DateTime.utc(2026, 9, 25, 8, 30)),
+      practice(2, 'Practice 2', DateTime.utc(2026, 9, 25, 12)),
+    ];
+
+    test('matches the session that starts at the same time', () {
+      final found = closestSession(weekend, DateTime.utc(2026, 9, 25, 12));
+      expect(found?.name, 'Practice 2');
+    });
+
+    test('nothing within 90 minutes means no match', () {
+      expect(closestSession(weekend, DateTime.utc(2026, 9, 26, 12)), isNull);
+    });
+  });
+
   group('colourFromHex', () {
     test('turns a team colour into a Flutter Color', () {
       expect(colourFromHex('F58020'), const Color(0xFFF58020));

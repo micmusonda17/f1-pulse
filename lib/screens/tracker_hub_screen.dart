@@ -12,7 +12,7 @@ import '../widgets/common_widgets.dart';
 import 'settings_screen.dart';
 import 'tracker_screen.dart';
 
-/// The third tab: go live, or pick a race to replay.
+/// The third tab: go live, or pick a session to replay.
 class TrackerHubScreen extends StatefulWidget {
   const TrackerHubScreen({super.key});
 
@@ -23,19 +23,28 @@ class TrackerHubScreen extends StatefulWidget {
 class _TrackerHubScreenState extends State<TrackerHubScreen> {
   final OpenF1Api _api = OpenF1Api.instance;
   int _year = DateTime.now().year;
-  late Future<List<OpenF1Session>> _races;
+  late Future<List<OpenF1Session>> _sessions;
+  String _kind = 'Race'; // Which chip is picked: an OpenF1 session type
   bool _checkingLive = false;
+
+  /// The chips above the list: OpenF1's session type -> the chip's label.
+  static const Map<String, String> _kinds = {
+    'Race': 'Races',
+    'Qualifying': 'Qualifying',
+    'Practice': 'Practice',
+  };
 
   @override
   void initState() {
     super.initState();
-    _races = _loadRaces();
+    _sessions = _loadSessions();
   }
 
-  /// Races and sprints from [_year] that have finished, newest first.
-  Future<List<OpenF1Session>> _loadRaces() async {
+  /// Every session from [_year] that has finished, newest first. The chips
+  /// only filter this list, so switching chips needs no new download.
+  Future<List<OpenF1Session>> _loadSessions() async {
     try {
-      final sessions = await _api.getRaceSessions(_year);
+      final sessions = await _api.getSessions(_year);
       final finished =
           sessions.where((s) => s.hasFinished && !s.isCancelled).toList();
       finished.sort((a, b) => b.start.compareTo(a.start));
@@ -69,7 +78,7 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
   void _pickYear(int year) {
     setState(() {
       _year = year;
-      _races = _loadRaces();
+      _sessions = _loadSessions();
     });
   }
 
@@ -180,7 +189,7 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Text('Race replays', style: theme.textTheme.titleMedium),
+                Text('Replays', style: theme.textTheme.titleMedium),
                 const Spacer(),
                 DropdownButton<int>(
                   value: _year,
@@ -195,12 +204,26 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final kind in _kinds.entries)
+                  ChoiceChip(
+                    label: Text(kind.value),
+                    selected: _kind == kind.key,
+                    onSelected: (_) => setState(() => _kind = kind.key),
+                  ),
+              ],
+            ),
+          ),
           Expanded(
             child: FutureBuilder<List<OpenF1Session>>(
-              future: _races,
+              future: _sessions,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingView(message: 'Loading races');
+                  return const LoadingView(message: 'Loading sessions');
                 }
                 if (snapshot.hasError) {
                   return ErrorView(
@@ -208,24 +231,27 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
                     onRetry: () => _pickYear(_year),
                   );
                 }
-                final races = snapshot.data ?? [];
-                if (races.isEmpty) {
-                  return Center(child: Text('No finished races in $_year yet.'));
+                final shown = (snapshot.data ?? [])
+                    .where((session) => session.type == _kind)
+                    .toList();
+                if (shown.isEmpty) {
+                  final label = _kinds[_kind]!.toLowerCase();
+                  return Center(
+                    child: Text('No $label to replay in $_year yet.'),
+                  );
                 }
                 return ListView.builder(
-                  itemCount: races.length,
+                  itemCount: shown.length,
                   itemBuilder: (context, index) {
-                    final race = races[index];
+                    final session = shown[index];
                     return ListTile(
-                      leading: Icon(
-                        race.name == 'Sprint' ? Icons.bolt : Icons.flag,
-                      ),
-                      title: Text(race.title),
+                      leading: Icon(sessionIcon(session)),
+                      title: Text(session.title),
                       subtitle: Text(
-                        '${race.country}  ·  ${formatDate(race.start)}',
+                        '${session.country}  ·  ${formatDate(session.start)}',
                       ),
                       trailing: const Icon(Icons.play_circle_outline),
-                      onTap: () => _open(race, TrackerMode.replay),
+                      onTap: () => _open(session, TrackerMode.replay),
                     );
                   },
                 );
@@ -236,4 +262,14 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
       ),
     );
   }
+}
+
+/// An icon for each kind of session: a flag for a race, a bolt for a
+/// sprint, a stopwatch for qualifying, a speedometer for practice.
+IconData sessionIcon(OpenF1Session session) {
+  return switch (session.type) {
+    'Race' => session.name == 'Sprint' ? Icons.bolt : Icons.flag,
+    'Qualifying' => Icons.timer_outlined,
+    _ => Icons.speed,
+  };
 }

@@ -53,6 +53,25 @@ class OpenF1Session {
   }
 }
 
+/// The session in [sessions] that starts closest to [start], if one starts
+/// within 90 minutes of it. This is how a Jolpica session (from the race
+/// calendar) is matched to the same session in OpenF1.
+///
+/// The closest, not the first: on a race weekend, practice 1 and practice 2
+/// can start only a few hours apart.
+OpenF1Session? closestSession(List<OpenF1Session> sessions, DateTime start) {
+  OpenF1Session? closest;
+  var closestGap = const Duration(minutes: 90);
+  for (final session in sessions) {
+    final gap = session.start.difference(start).abs();
+    if (gap < closestGap) {
+      closest = session;
+      closestGap = gap;
+    }
+  }
+  return closest;
+}
+
 /// A driver in one OpenF1 session, with their team colour.
 class DriverInfo {
   const DriverInfo({
