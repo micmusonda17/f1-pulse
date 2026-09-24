@@ -1,0 +1,57 @@
+# Builds the web version of F1 Pulse and puts it on GitHub Pages every
+# time you push to the main branch. Explained in Chapter 36 of the Bible.
+name: Deploy web version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Adds a "Run workflow" button on GitHub
+
+# What this workflow is allowed to do on GitHub.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# If you push twice quickly, only the newest version gets published.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # A failing test stops the deploy, so a broken app never goes live.
+      - run: flutter test
+
+      # The site lives at https://<you>.github.io/f1-pulse/, so every link
+      # starts with /f1-pulse/. The driver photos stay off on the public site.
+      - name: Build the website
+        run: >
+          flutter build web --release
+          --base-href "/${{ github.event.repository.name }}/"
+          --dart-define=SHOW_PHOTOS=false
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
