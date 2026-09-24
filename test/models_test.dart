@@ -63,6 +63,16 @@ const retiredJson = '''
 }
 ''';
 
+const qualifyingJson = '''
+{
+  "number": "63", "position": "1",
+  "Driver": {"driverId": "russell", "code": "RUS", "givenName": "George",
+             "familyName": "Russell", "nationality": "British"},
+  "Constructor": {"constructorId": "mercedes", "name": "Mercedes"},
+  "Q1": "1:41.221", "Q2": "1:40.902", "Q3": "1:40.513"
+}
+''';
+
 const openF1DriverJson = '''
 {
   "driver_number": 44, "name_acronym": "HAM", "full_name": "Lewis HAMILTON",
@@ -81,6 +91,7 @@ void main() {
       expect(race.season, 2026);
       expect(race.round, 1);
       expect(race.name, 'Australian Grand Prix');
+      expect(race.circuitId, 'albert_park');
       expect(race.locality, 'Melbourne');
       expect(race.country, 'Australia');
     });
@@ -144,6 +155,15 @@ void main() {
       final result = RaceResult.fromJson(decode(retiredJson));
       expect(result.time, isNull);
       expect(result.timeOrStatus, 'Retired');
+    });
+  });
+
+  group('QualifyingResult.fromJson', () {
+    test('reads the position, driver and team', () {
+      final result = QualifyingResult.fromJson(decode(qualifyingJson));
+      expect(result.position, 1);
+      expect(result.driver.code, 'RUS');
+      expect(result.team, 'Mercedes');
     });
   });
 

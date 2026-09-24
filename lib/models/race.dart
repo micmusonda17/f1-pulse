@@ -14,6 +14,7 @@ class Race {
     required this.season,
     required this.round,
     required this.name,
+    required this.circuitId,
     required this.circuitName,
     required this.locality,
     required this.country,
@@ -24,6 +25,7 @@ class Race {
   final int season;
   final int round;
   final String name;
+  final String circuitId; // Jolpica's name for the track: "baku", "monza"
   final String circuitName;
   final String locality;
   final String country;
@@ -66,6 +68,7 @@ class Race {
       season: int.parse(json['season'] as String),
       round: int.parse(json['round'] as String),
       name: json['raceName'] as String,
+      circuitId: circuit['circuitId'] as String,
       circuitName: circuit['circuitName'] as String,
       locality: location['locality'] as String,
       country: location['country'] as String,

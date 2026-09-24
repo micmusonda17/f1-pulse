@@ -18,10 +18,23 @@ class JolpicaApi {
 
   final http.Client _client;
 
+  // One queue for every JolpicaApi in the app (static means shared by all
+  // of them), so together they stay under 4 requests a second. The same
+  // idea as the queue in OpenF1Api.
+  static const Duration _gapBetweenRequests = Duration(milliseconds: 260);
+  static Future<void> _nextSlot = Future<void>.value();
+
+  static Future<void> _waitForSlot() {
+    final mySlot = _nextSlot;
+    _nextSlot = mySlot.then((_) => Future<void>.delayed(_gapBetweenRequests));
+    return mySlot;
+  }
+
   /// Every Jolpica answer is wrapped in {"MRData": {...}}.
   /// This makes the request, checks it worked, and unwraps it.
   Future<Map<String, dynamic>> _get(String path) async {
     final url = Uri.parse('${AppConfig.jolpicaBaseUrl}/$path');
+    await _waitForSlot(); // Wait for our turn
 
     final http.Response response;
     try {
@@ -89,6 +102,43 @@ class JolpicaApi {
     final rows = races.first['Results'] as List<dynamic>;
     return rows
         .map((row) => RaceResult.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// The round number of the latest race with results, or null before the
+  /// first race of the season. "last" is a Jolpica shortcut.
+  Future<int?> getLastRound(int season) async {
+    final data = await _get('$season/last/results.json?limit=1');
+    final races = data['RaceTable']['Races'] as List<dynamic>;
+    if (races.isEmpty) return null;
+    return int.tryParse('${races.first['round']}');
+  }
+
+  /// The finishing order of the race at one circuit in one season.
+  /// Empty if there was no race there that year.
+  Future<List<RaceResult>> getResultsAtCircuit(
+    int season,
+    String circuitId,
+  ) async {
+    final data = await _get(
+      '$season/circuits/$circuitId/results.json?limit=100',
+    );
+    final races = data['RaceTable']['Races'] as List<dynamic>;
+    if (races.isEmpty) return [];
+    final rows = races.first['Results'] as List<dynamic>;
+    return rows
+        .map((row) => RaceResult.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// The qualifying order for one race. Empty until qualifying is over.
+  Future<List<QualifyingResult>> getQualifying(int season, int round) async {
+    final data = await _get('$season/$round/qualifying.json?limit=100');
+    final races = data['RaceTable']['Races'] as List<dynamic>;
+    if (races.isEmpty) return [];
+    final rows = races.first['QualifyingResults'] as List<dynamic>;
+    return rows
+        .map((row) => QualifyingResult.fromJson(row as Map<String, dynamic>))
         .toList();
   }
 }

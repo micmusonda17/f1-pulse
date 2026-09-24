@@ -38,6 +38,7 @@ class TrackerController extends ChangeNotifier {
   DateTime clock; // The moment of the race we are showing
   bool isPlaying = false;
   int speed = 1;
+  int? totalLaps; // Replays only: how many laps the race had
 
   static const List<int> speeds = [1, 5, 10, 20];
 
@@ -47,6 +48,9 @@ class TrackerController extends ChangeNotifier {
 
   final Map<int, List<CarLocation>> _locations = {}; // driver -> points
   final List<PositionUpdate> _positions = [];
+  final List<Lap> _laps = []; // For the lap counter
+  List<LapMark> _lapTimeline = [];
+  DateTime _lastLapPoll = DateTime(2000);
   DateTime? _loadedUntil; // Replay: we have car data up to here
   DateTime? _liveCursor; // Live: the newest car data we have
   DateTime? _positionCursor; // Live: the newest position data we have
@@ -80,6 +84,13 @@ class TrackerController extends ChangeNotifier {
   /// Driver numbers in race order at [clock], leader first.
   List<int> get runningOrder => runningOrderAt(_positions, clock);
 
+  /// The race's lap at [clock], or null before the start (and in practice
+  /// or qualifying, where a lap count means nothing).
+  int? get currentLap => lapAt(_lapTimeline, clock);
+
+  /// Races and sprints count laps. OpenF1 calls both of them type "Race".
+  bool get countsLaps => session.type == 'Race';
+
   // ------------------------------------------------------------------
   // Starting up
   // ------------------------------------------------------------------
@@ -104,6 +115,11 @@ class TrackerController extends ChangeNotifier {
       _positions.addAll(await _api.getPositions(session.sessionKey));
       _positions.sort((a, b) => a.date.compareTo(b.date));
       if (_positions.isNotEmpty) _positionCursor = _positions.last.date;
+
+      if (countsLaps) {
+        _setMessage('Counting the laps');
+        await _loadLaps();
+      }
 
       _setMessage('Drawing the track');
       trackOutline = await _loadOutline();
@@ -315,11 +331,34 @@ class TrackerController extends ChangeNotifier {
         _positions.sort((a, b) => a.date.compareTo(b.date));
         _positionCursor = _positions.last.date;
       }
+
+      final lapsDue =
+          DateTime.now().difference(_lastLapPoll) >= AppConfig.lapPollEvery;
+      if (countsLaps && lapsDue) await _loadLaps();
       message = null;
     } on ApiException catch (e) {
       message = e.message;
     } finally {
       _fetching = false;
+    }
+  }
+
+  /// Downloads laps for the lap counter. The first time that is every lap
+  /// so far. After that (live only) it is just the laps numbered higher
+  /// than the race's current lap, which is all the counter needs.
+  Future<void> _loadLaps() async {
+    _lastLapPoll = DateTime.now();
+    final highest = _lapTimeline.isEmpty ? 0 : _lapTimeline.last.lap;
+    try {
+      final newLaps = await _api.getLaps(session.sessionKey, above: highest);
+      if (newLaps.isEmpty) return;
+      _laps.addAll(newLaps);
+      _lapTimeline = buildLapTimeline(_laps);
+      if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
+        totalLaps = _lapTimeline.last.lap; // The last lap anyone started
+      }
+    } on ApiException {
+      // The tracker works fine without the counter, so we just leave it out.
     }
   }
 

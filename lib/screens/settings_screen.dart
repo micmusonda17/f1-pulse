@@ -193,7 +193,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'to Formula 1 or any team.\n\n'
             'Calendar, standings and results: Jolpica F1 API.\n'
             'Car positions: OpenF1.\n'
+            'Circuit maps: the f1-circuits project by Tomislav Bacinger.\n'
             'News: the RSS feeds of each website.',
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              // A ready-made Flutter page listing every licence.
+              onPressed: () => showLicensePage(
+                context: context,
+                applicationName: 'Pitbeat',
+              ),
+              child: const Text('Open-source licences'),
+            ),
           ),
         ],
       ),

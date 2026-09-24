@@ -72,4 +72,44 @@ void main() {
       expect(runningOrderAt(updates, at(15)), [44, 1]);
     });
   });
+
+  group('lap counter', () {
+    Lap lap(int driver, int number, int seconds) => Lap(
+          driverNumber: driver,
+          lapNumber: number,
+          start: at(seconds), // Seconds past 59 roll over into minutes
+          duration: null,
+        );
+
+    final laps = [
+      lap(1, 1, 0),
+      lap(2, 1, 1),
+      lap(1, 2, 90), // Car 1 leads onto lap 2
+      lap(2, 2, 92),
+      lap(2, 3, 181), // Car 2 has overtaken and starts lap 3 first
+      lap(1, 3, 183),
+      // No start time: OpenF1 sometimes leaves it out. It is skipped.
+      const Lap(driverNumber: 1, lapNumber: 4, start: null, duration: null),
+    ];
+
+    test('keeps one mark per lap, at the first car to start it', () {
+      final timeline = buildLapTimeline(laps);
+      expect(timeline.map((mark) => mark.lap).toList(), [1, 2, 3]);
+      expect(timeline[2].date, at(181));
+    });
+
+    test('the order the laps arrive in does not matter', () {
+      final timeline = buildLapTimeline(laps.reversed.toList());
+      expect(timeline.map((mark) => mark.lap).toList(), [1, 2, 3]);
+    });
+
+    test('lapAt finds the lap at any moment', () {
+      final timeline = buildLapTimeline(laps);
+      final beforeStart = at(0).subtract(const Duration(seconds: 1));
+      expect(lapAt(timeline, beforeStart), isNull);
+      expect(lapAt(timeline, at(45)), 1);
+      expect(lapAt(timeline, at(90)), 2); // Exactly at the start counts
+      expect(lapAt(timeline, at(500)), 3);
+    });
+  });
 }

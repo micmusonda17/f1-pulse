@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
+import '../theme.dart';
 import '../tracker/track_painter.dart';
 import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
@@ -60,19 +61,35 @@ class _TrackerScreenState extends State<TrackerScreen> {
           }
 
           final message = _controller.message;
+          final lap = _controller.currentLap;
           return Column(
             children: [
               Expanded(
                 flex: 5,
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: CustomPaint(
-                    painter: TrackPainter(
-                      outline: _controller.trackOutline,
-                      cars: _controller.carPositions,
-                      drivers: _controller.drivers,
-                    ),
-                    child: const SizedBox.expand(),
+                  // A Stack puts its children on top of each other: the
+                  // map first, then the lap counter in the top left corner.
+                  child: Stack(
+                    children: [
+                      CustomPaint(
+                        painter: TrackPainter(
+                          outline: _controller.trackOutline,
+                          cars: _controller.carPositions,
+                          drivers: _controller.drivers,
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
+                      if (lap != null)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: LapCounter(
+                            lap: lap,
+                            total: _controller.totalLaps,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -175,6 +192,54 @@ class _TrackerScreenState extends State<TrackerScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "LAP 23/51" in the corner of the map, like the TV graphic.
+/// Live races show just "LAP 23": nobody knows the last lap in advance.
+class LapCounter extends StatelessWidget {
+  const LapCounter({super.key, required this.lap, this.total});
+
+  final int lap;
+  final int? total;
+
+  @override
+  Widget build(BuildContext context) {
+    final lastLap = total;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: F1Colors.surface,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      // Text.rich: one line of text with a different style for each part.
+      child: Text.rich(
+        TextSpan(
+          children: [
+            const TextSpan(
+              text: 'LAP ',
+              style: TextStyle(
+                color: F1Colors.red,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+              ),
+            ),
+            TextSpan(
+              text: '$lap',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            if (lastLap != null)
+              TextSpan(
+                text: '/$lastLap',
+                style: const TextStyle(
+                  color: F1Colors.muted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

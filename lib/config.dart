@@ -17,6 +17,10 @@ class AppConfig {
   /// How often the live map asks OpenF1 for new data.
   static const Duration livePollEvery = Duration(seconds: 5);
 
+  /// How often the live lap counter asks for new laps. A lap takes well
+  /// over a minute, so every 30 seconds is plenty.
+  static const Duration lapPollEvery = Duration(seconds: 30);
+
   /// Driver photos come from formula1.com. They are fine in the app on your
   /// own phone, but they are not ours to put on a public website, so the
   /// web version is built with --dart-define=SHOW_PHOTOS=false.

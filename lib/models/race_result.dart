@@ -43,3 +43,25 @@ class RaceResult {
   /// Positive means they gained places from where they started.
   int get placesGained => grid == 0 ? 0 : grid - position;
 }
+
+/// One driver's place in qualifying: where they will start the race
+/// (before any grid penalties).
+class QualifyingResult {
+  const QualifyingResult({
+    required this.position,
+    required this.driver,
+    required this.team,
+  });
+
+  final int position;
+  final Driver driver;
+  final String team;
+
+  factory QualifyingResult.fromJson(Map<String, dynamic> json) {
+    return QualifyingResult(
+      position: int.parse(json['position'] as String),
+      driver: Driver.fromJson(json['Driver'] as Map<String, dynamic>),
+      team: (json['Constructor'] as Map<String, dynamic>)['name'] as String,
+    );
+  }
+}

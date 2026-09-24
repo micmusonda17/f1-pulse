@@ -9,8 +9,10 @@ import '../services/jolpica_api.dart';
 import '../services/openf1_api.dart';
 import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
+import '../widgets/circuit_outline.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import 'prediction_screen.dart';
 import 'tracker_screen.dart';
 
 /// One race weekend: the session times, and the results once it is over.
@@ -92,6 +94,27 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
               '${race.locality}, ${race.country}  ·  Round ${race.round}',
             ),
           ),
+          Center(
+            child: CircuitOutline(
+              circuitId: race.circuitId,
+              size: 200,
+              colour: Colors.white,
+              strokeWidth: 4,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: CircuitFacts(circuitId: race.circuitId),
+          ),
+          if (!race.isFinished)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: OutlinedButton.icon(
+                onPressed: () => openPrediction(context, race),
+                icon: const Icon(Icons.insights),
+                label: const Text('Who will win?'),
+              ),
+            ),
           const SectionHeader('Weekend schedule (your time)'),
           for (final session in race.sessions)
             ListTile(

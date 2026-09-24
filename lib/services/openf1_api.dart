@@ -195,6 +195,17 @@ class OpenF1Api {
     return Lap.fromJson(rows.first as Map<String, dynamic>);
   }
 
+  /// Laps for the lap counter: every lap of the session, or only the laps
+  /// numbered higher than [above] (live mode asks for just the new ones).
+  Future<List<Lap>> getLaps(int sessionKey, {int above = 0}) async {
+    var query = 'laps?session_key=$sessionKey';
+    if (above > 0) query += '&lap_number>$above';
+    final rows = await _get(query);
+    return rows
+        .map((row) => Lap.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Every position change in a session, or only those after [after].
   Future<List<PositionUpdate>> getPositions(
     int sessionKey, {

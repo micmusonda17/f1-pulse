@@ -129,3 +129,11 @@ DateTime? parseRssDate(String? text) {
     return null;
   }
 }
+
+/// A chance from 0 to 1 as a percentage: 0.4123 becomes "41%".
+/// Tiny chances show as "<1%", because "0%" would mean impossible.
+String formatChance(double chance) {
+  final percent = (chance * 100).round();
+  if (percent < 1) return '<1%';
+  return '$percent%';
+}

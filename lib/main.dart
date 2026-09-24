@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'screens/calendar_screen.dart';
 import 'screens/news_screen.dart';
@@ -10,7 +12,20 @@ import 'theme.dart';
 
 /// Where the app starts, just like `if __name__ == "__main__":` in Python.
 void main() {
+  LicenseRegistry.addLicense(_ourLicences);
   runApp(const PitbeatApp());
+}
+
+/// The licences of the free files we ship with the app, for the Licences
+/// page in Settings (Flutter adds its own packages' licences by itself).
+///
+/// async* makes a Stream: a function that can hand back several results,
+/// one at a time, with yield. The page only calls it when you open it.
+Stream<LicenseEntry> _ourLicences() async* {
+  final circuits = await rootBundle.loadString('assets/circuits/LICENSE.txt');
+  yield LicenseEntryWithLineBreaks(['f1-circuits (circuit maps)'], circuits);
+  final font = await rootBundle.loadString('assets/fonts/OFL.txt');
+  yield LicenseEntryWithLineBreaks(['Titillium Web (font)'], font);
 }
 
 /// The whole app: its name, its colours and its first screen.

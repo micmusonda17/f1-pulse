@@ -5,8 +5,10 @@ import '../services/jolpica_api.dart';
 import '../services/settings_store.dart';
 import '../theme.dart';
 import '../utils/formatting.dart';
+import '../widgets/circuit_outline.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/countdown.dart';
+import 'prediction_screen.dart';
 import 'race_detail_screen.dart';
 import 'settings_screen.dart';
 
@@ -100,7 +102,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
                   ),
                 ),
-                if (nextRace != null) NextRaceCard(race: nextRace),
+                if (nextRace != null) ...[
+                  NextRaceCard(race: nextRace),
+                  PredictionTeaser(race: nextRace),
+                ],
                 SectionHeader(title),
                 for (final race in races)
                   RaceTile(race: race, isNext: race == nextRace),
@@ -148,27 +153,48 @@ class NextRaceCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ROUND ${race.round}  ·  UP NEXT',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: F1Colors.red,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    race.name.toUpperCase(),
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${race.circuitName}\n${race.locality}, ${race.country}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: F1Colors.muted,
-                    ),
+                  // The words on the left, the circuit drawing on the right.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ROUND ${race.round}  ·  UP NEXT',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: F1Colors.red,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              race.name.toUpperCase(),
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${race.circuitName}\n'
+                              '${race.locality}, ${race.country}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: F1Colors.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      CircuitOutline(
+                        circuitId: race.circuitId,
+                        size: 96,
+                        colour: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
                   if (next != null) ...[
@@ -205,11 +231,20 @@ class RaceTile extends StatelessWidget {
     var subtitle = '${race.locality}, ${race.country}';
     if (start != null) subtitle += '  ·  ${formatDate(start)}';
 
-    Widget? trailing;
+    // The circuit's shape: red for the next race, faded once it is over.
+    final Color outlineColour;
+    if (isNext) {
+      outlineColour = F1Colors.red;
+    } else if (race.isFinished) {
+      outlineColour = Colors.white38;
+    } else {
+      outlineColour = Colors.white70;
+    }
+    Widget? icon;
     if (race.isFinished) {
-      trailing = const Icon(Icons.check_circle_outline, color: F1Colors.muted);
+      icon = const Icon(Icons.check_circle_outline, color: F1Colors.muted);
     } else if (isNext) {
-      trailing = const Icon(Icons.arrow_forward);
+      icon = const Icon(Icons.arrow_forward);
     }
 
     return ListTile(
@@ -229,7 +264,14 @@ class RaceTile extends StatelessWidget {
       ),
       title: Text(race.name),
       subtitle: Text(subtitle),
-      trailing: trailing,
+      // mainAxisSize.min: the Row is only as wide as what is inside it.
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircuitOutline(circuitId: race.circuitId, colour: outlineColour),
+          if (icon != null) ...[const SizedBox(width: 8), icon],
+        ],
+      ),
       selected: isNext,
       onTap: () => openRace(context, race),
     );

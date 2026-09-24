@@ -63,3 +63,48 @@ List<int> runningOrderAt(List<PositionUpdate> updates, DateTime time) {
   order.sort((a, b) => latest[a]!.compareTo(latest[b]!));
   return order;
 }
+
+/// The moment the race moved on to a new lap.
+class LapMark {
+  const LapMark(this.date, this.lap);
+
+  final DateTime date;
+  final int lap;
+}
+
+/// Turns OpenF1's laps (every driver's) into the race's own lap timeline.
+///
+/// The race is on lap 12 as soon as the leader starts lap 12. So we sort
+/// every lap start by time and keep only the ones that beat the highest
+/// lap number so far. What is left is one mark per lap, in order.
+List<LapMark> buildLapTimeline(List<Lap> laps) {
+  final starts = <LapMark>[
+    for (final lap in laps)
+      if (lap.start != null) LapMark(lap.start!, lap.lapNumber),
+  ];
+  starts.sort((a, b) => a.date.compareTo(b.date));
+
+  final timeline = <LapMark>[];
+  var highest = 0;
+  for (final mark in starts) {
+    if (mark.lap > highest) {
+      highest = mark.lap;
+      timeline.add(mark);
+    }
+  }
+  return timeline;
+}
+
+/// The race's lap at [time], or null before the first lap has started.
+///
+/// A race has about 60 laps, so a simple walk through the list is quick
+/// enough. (The car locations need firstIndexAfter's binary search because
+/// there are tens of thousands of them.)
+int? lapAt(List<LapMark> timeline, DateTime time) {
+  int? lap;
+  for (final mark in timeline) {
+    if (mark.date.isAfter(time)) break;
+    lap = mark.lap;
+  }
+  return lap;
+}
