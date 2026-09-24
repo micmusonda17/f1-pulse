@@ -91,6 +91,21 @@ class Race {
   }
 }
 
+/// The session that is on right now, or null if nothing is.
+///
+/// Every session counts as "on" for two hours after it starts: right for
+/// a race, a little long for practice. [now] is only there for the tests.
+WeekendSession? findLiveSession(List<Race> races, {DateTime? now}) {
+  final time = now ?? DateTime.now();
+  for (final race in races) {
+    for (final session in race.sessions) {
+      final end = session.start.add(const Duration(hours: 2));
+      if (!time.isBefore(session.start) && time.isBefore(end)) return session;
+    }
+  }
+  return null;
+}
+
 /// The first race that has not finished, or null at the end of the season.
 Race? findNextRace(List<Race> races) {
   for (final race in races) {

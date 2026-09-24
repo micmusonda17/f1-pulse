@@ -15,11 +15,33 @@ class NewsService {
   final http.Client _client;
 
   Future<List<NewsItem>> getNews(NewsSource source) async {
+    if (kIsWeb) {
+      // Browsers block web pages from reading the news sites (CORS,
+      // Chapter 2). But a page may always read files from its own
+      // address, so the website reads the copy GitHub saves next to it.
+      return _download(Uri.base.resolve('news/${source.id}.xml'), source);
+    }
+    try {
+      return await _download(Uri.parse(source.url), source);
+    } on ApiException catch (firstError) {
+      // The news site is down or refusing us: try the copy on GitHub.
+      try {
+        return await _download(
+          Uri.parse('${AppConfig.newsMirrorUrl}/${source.id}.xml'),
+          source,
+        );
+      } on ApiException {
+        throw firstError; // Both failed: explain why the real site did
+      }
+    }
+  }
+
+  Future<List<NewsItem>> _download(Uri url, NewsSource source) async {
     final http.Response response;
     try {
       response = await _client
           .get(
-            Uri.parse(source.url),
+            url,
             // Some sites refuse requests that do not look like a browser.
             // Browsers do not let web pages change this header, so we only
             // send it on phones and desktops.
@@ -27,15 +49,17 @@ class NewsService {
           )
           .timeout(const Duration(seconds: 15));
     } on Exception {
-      // In a browser this is almost always CORS (Chapter 2), not the Wi-Fi.
       throw ApiException(
-        kIsWeb
-            ? '${source.name} does not let web pages read its feed. '
-                'The News tab works on a phone or the simulator.'
-            : 'Could not load ${source.name}. Check your internet connection.',
+        'Could not load ${source.name}. Check your internet connection.',
       );
     }
 
+    if (kIsWeb && response.statusCode == 404) {
+      throw ApiException(
+        'The ${source.name} news has not been copied to this website yet. '
+        'GitHub copies it every 30 minutes.',
+      );
+    }
     if (response.statusCode != 200) {
       throw ApiException(
         '${source.name} answered with error ${response.statusCode}.',

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
+import '../models/race.dart';
 import '../services/api_exception.dart';
+import '../services/jolpica_api.dart';
 import '../services/openf1_api.dart';
 import '../services/settings_store.dart';
 import '../tracker/tracker_controller.dart';
@@ -32,11 +34,36 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
 
   /// Races and sprints from [_year] that have finished, newest first.
   Future<List<OpenF1Session>> _loadRaces() async {
-    final sessions = await _api.getRaceSessions(_year);
-    final finished =
-        sessions.where((s) => s.hasFinished && !s.isCancelled).toList();
-    finished.sort((a, b) => b.start.compareTo(a.start));
-    return finished;
+    try {
+      final sessions = await _api.getRaceSessions(_year);
+      final finished =
+          sessions.where((s) => s.hasFinished && !s.isCancelled).toList();
+      finished.sort((a, b) => b.start.compareTo(a.start));
+      return finished;
+    } on ApiException {
+      // While any session is live, OpenF1 shuts out everyone without a
+      // sponsor login, even for old races. In a browser that looks like
+      // "no internet", so we check the calendar and say what is going on.
+      final live = await _liveSession();
+      if (live != null) {
+        throw ApiException(
+          '${live.name} is on right now. While a session is live, OpenF1 '
+          'only answers sponsors, even for old races. The replays come '
+          'back when it ends.',
+        );
+      }
+      rethrow; // Not a live session: keep the original message
+    }
+  }
+
+  /// The session on right now, from the Jolpica calendar (which never
+  /// locks anyone out). Null if nothing is on or the calendar fails too.
+  Future<WeekendSession?> _liveSession() async {
+    try {
+      return findLiveSession(await JolpicaApi().getSchedule());
+    } catch (_) {
+      return null;
+    }
   }
 
   void _pickYear(int year) {

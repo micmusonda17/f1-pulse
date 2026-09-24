@@ -22,21 +22,33 @@ class AppConfig {
   /// web version is built with --dart-define=SHOW_PHOTOS=false.
   static const bool showDriverPhotos =
       bool.fromEnvironment('SHOW_PHOTOS', defaultValue: true);
+
+  /// Where GitHub saves a copy of every news feed, every 30 minutes
+  /// (bin/fetch_news.dart). The website reads the news from here, and the
+  /// phone app falls back to it if a news site is down.
+  static const String newsMirrorUrl =
+      'https://micmusonda17.github.io/f1-pulse/news';
 }
 
 /// A news website that publishes an RSS feed.
 class NewsSource {
-  const NewsSource(this.name, this.url);
+  const NewsSource(this.id, this.name, this.url);
 
+  final String id; // Short name for the saved copy: news/racefans.xml
   final String name;
   final String url;
 }
 
 const List<NewsSource> newsSources = [
-  NewsSource('RaceFans', 'https://www.racefans.net/feed/'),
+  NewsSource('racefans', 'RaceFans', 'https://www.racefans.net/feed/'),
   NewsSource(
+    'formula1',
     'Formula1.com',
     'https://www.formula1.com/content/fom-website/en/latest/all.xml',
   ),
-  NewsSource('Autosport', 'https://www.autosport.com/rss/f1/news/'),
+  NewsSource(
+    'autosport',
+    'Autosport',
+    'https://www.autosport.com/rss/f1/news/',
+  ),
 ];

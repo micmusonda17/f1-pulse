@@ -1,10 +1,13 @@
 # Builds the web version of F1 Pulse and puts it on GitHub Pages every
-# time you push to the main branch. Explained in Chapter 36 of the Bible.
+# time you push to the main branch, and every 30 minutes to refresh the
+# news. Explained in Chapters 36 and 37 of the Bible.
 name: Deploy web version
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '*/30 * * * *' # Every 30 minutes (GitHub may run it a bit late)
   workflow_dispatch: # Adds a "Run workflow" button on GitHub
 
 # What this workflow is allowed to do on GitHub.
@@ -32,7 +35,9 @@ jobs:
       - run: flutter pub get
 
       # A failing test stops the deploy, so a broken app never goes live.
+      # The code has not changed on a timed run, so skip the tests then.
       - run: flutter test
+        if: github.event_name != 'schedule'
 
       # The site lives at https://<you>.github.io/f1-pulse/, so every link
       # starts with /f1-pulse/. The driver photos stay off on the public site.
@@ -41,6 +46,11 @@ jobs:
           flutter build web --release
           --base-href "/${{ github.event.repository.name }}/"
           --dart-define=SHOW_PHOTOS=false
+
+      # Fresh copies of the news feeds, saved next to the website, so the
+      # web version can read them from its own address.
+      - name: Copy the news
+        run: dart run bin/fetch_news.dart build/web/news
 
       - uses: actions/upload-pages-artifact@v3
         with:

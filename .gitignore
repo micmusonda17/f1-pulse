@@ -49,3 +49,6 @@ app.*.map.json
 
 # The Build Bible is your study guide, not part of the app.
 F1_Pulse_Build_Bible.pdf
+
+# Local copies of the news for `flutter run -d chrome` (Chapter 37).
+/web/news/

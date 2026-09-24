@@ -2,8 +2,10 @@
 # F1 Pulse: put the project on GitHub and switch on the web version.
 # Run it with:  bash ~/Developer/f1-pulse/tool/publish_web.sh
 #
-# After the first time, you never need this script again: every
-# `git push` rebuilds the website on its own (.github/workflows/deploy-web.yml).
+# After the first time, `git push` is enough: GitHub rebuilds the website
+# on its own (.github/workflows/deploy-web.yml). Run this script again only
+# when tool/deploy-web.yml changes. You can give it a commit message:
+#   bash tool/publish_web.sh "Keep the news connected on the web"
 
 set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -32,12 +34,12 @@ echo
 echo "== 2. The website build instructions for GitHub =="
 # GitHub runs any workflow file it finds in .github/workflows. This one
 # builds the website on every push. It is explained in Chapter 36.
-if [ ! -f .github/workflows/deploy-web.yml ]; then
+if ! cmp -s tool/deploy-web.yml .github/workflows/deploy-web.yml; then
   mkdir -p .github/workflows
   cp tool/deploy-web.yml .github/workflows/deploy-web.yml
-  echo "Added .github/workflows/deploy-web.yml"
+  echo "Copied the latest tool/deploy-web.yml into .github/workflows/"
 else
-  echo "Already there."
+  echo "Up to date."
 fi
 
 echo
@@ -54,7 +56,7 @@ if [ -z "$(git config user.email)" ]; then
   git config user.email "$(gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"')"
 fi
 git add -A
-git commit -m "F1 Pulse" >/dev/null 2>&1 && echo "Saved a commit." || echo "Nothing new to commit."
+git commit -m "${1:-Update F1 Pulse}" >/dev/null 2>&1 && echo "Saved a commit." || echo "Nothing new to commit."
 
 echo
 echo "== 4. The repository on GitHub =="

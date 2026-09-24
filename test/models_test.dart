@@ -103,6 +103,22 @@ void main() {
     });
   });
 
+  group('findLiveSession', () {
+    final races = [Race.fromJson(decode(raceJson))];
+
+    test('finds the session that is on', () {
+      // Practice 1 started at 01:30 UTC; this is half an hour in.
+      final live = findLiveSession(races, now: DateTime.utc(2026, 3, 6, 2));
+      expect(live?.name, 'Practice 1');
+    });
+
+    test('finds nothing between sessions', () {
+      // Practice 1 is over and Practice 2 starts at 05:00.
+      final live = findLiveSession(races, now: DateTime.utc(2026, 3, 6, 4));
+      expect(live, isNull);
+    });
+  });
+
   group('DriverStanding.fromJson', () {
     test('reads position, points, wins, driver and team', () {
       final standing = DriverStanding.fromJson(decode(standingJson));

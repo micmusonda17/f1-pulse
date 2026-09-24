@@ -116,8 +116,9 @@ class OpenF1Api {
       }
       if (response.statusCode == 401 || response.statusCode == 403) {
         throw const ApiException(
-          'This is live data, which needs an OpenF1 sponsor login. '
-          'Add it in Settings.',
+          'OpenF1 said no. While a session is live, it only answers '
+          'sponsors, even for old races. Try again when the session ends, '
+          'or add a sponsor login in Settings.',
         );
       }
       if (response.statusCode == 429) {

@@ -1,7 +1,12 @@
+import 'dart:convert';
+
+import 'package:f1_pulse/config.dart';
 import 'package:f1_pulse/models/news_item.dart';
 import 'package:f1_pulse/services/news_service.dart';
 import 'package:f1_pulse/utils/formatting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 // A cut-down copy of a real RSS feed.
 const sampleFeed = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +50,22 @@ void main() {
       expect(parseRssDate('not a date'), isNull);
       expect(parseRssDate('Wed, 23 Foo 2026 11:27:50 +0000'), isNull);
       expect(parseRssDate(null), isNull);
+    });
+  });
+
+  group('NewsService', () {
+    test('falls back to the copy on GitHub when a news site is down',
+        () async {
+      // A pretend internet: the news site fails, the GitHub copy works.
+      final client = MockClient((request) async {
+        if (request.url.toString().startsWith(AppConfig.newsMirrorUrl)) {
+          return http.Response.bytes(utf8.encode(sampleFeed), 200);
+        }
+        return http.Response('Down for maintenance', 503);
+      });
+
+      final items = await NewsService(client: client).getNews(newsSources[2]);
+      expect(items.length, 2);
     });
   });
 
