@@ -1,4 +1,4 @@
-name: f1_pulse
+name: pitbeat
 description: "A Formula 1 companion app: calendar, standings, race tracker and news."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.

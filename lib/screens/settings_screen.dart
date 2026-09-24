@@ -63,7 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _showWelcomeAgain() async {
     await _settings.setWelcomeDone(false);
     if (!mounted) return;
-    _show('The welcome pages will show next time F1 Pulse starts.');
+    _show('The welcome pages will show next time Pitbeat starts.');
   }
 
   Future<void> _save() async {
@@ -189,7 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text('About', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           const Text(
-            'F1 Pulse is a personal learning project. It is not connected '
+            'Pitbeat is a personal learning project. It is not connected '
             'to Formula 1 or any team.\n\n'
             'Calendar, standings and results: Jolpica F1 API.\n'
             'Car positions: OpenF1.\n'

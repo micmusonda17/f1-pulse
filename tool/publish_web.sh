@@ -1,6 +1,6 @@
 #!/bin/bash
-# F1 Pulse: put the project on GitHub and switch on the web version.
-# Run it with:  bash ~/Developer/f1-pulse/tool/publish_web.sh
+# Pitbeat: put the project on GitHub and switch on the web version.
+# Run it from the project folder:  bash tool/publish_web.sh
 #
 # After the first time, `git push` is enough: GitHub rebuilds the website
 # on its own (.github/workflows/deploy-web.yml). Run this script again only
@@ -9,7 +9,8 @@
 
 set -o pipefail
 cd "$(dirname "$0")/.." || exit 1
-REPO=f1-pulse
+REPO=pitbeat
+OLD_REPO=f1-pulse # The name before the app was renamed
 
 echo
 echo "== 1. The GitHub command line tool =="
@@ -56,17 +57,29 @@ if [ -z "$(git config user.email)" ]; then
   git config user.email "$(gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"')"
 fi
 git add -A
-git commit -m "${1:-Update F1 Pulse}" >/dev/null 2>&1 && echo "Saved a commit." || echo "Nothing new to commit."
+git commit -m "${1:-Update Pitbeat}" >/dev/null 2>&1 && echo "Saved a commit." || echo "Nothing new to commit."
 
 echo
 echo "== 4. The repository on GitHub =="
+# A repository still under its old name is renamed, not created again.
+if ! gh repo view "$OWNER/$REPO" >/dev/null 2>&1 \
+  && gh repo view "$OWNER/$OLD_REPO" >/dev/null 2>&1; then
+  gh repo rename "$REPO" --repo "$OWNER/$OLD_REPO" --yes || exit 1
+  echo "Renamed $OLD_REPO to $REPO."
+fi
 if git remote get-url origin >/dev/null 2>&1; then
-  echo "Already connected to $(git remote get-url origin)"
+  git remote set-url origin "https://github.com/$OWNER/$REPO.git"
+  echo "Connected to https://github.com/$OWNER/$REPO"
 else
   gh repo create "$REPO" --public --source . --remote origin \
-    --description "F1 Pulse: a Formula 1 companion app built with Flutter, as a learning project" \
+    --description "A Formula 1 companion app for iPhone and the web, built with Flutter" \
     || exit 1
 fi
+
+# The description and website link shown at the top of the repository page.
+gh repo edit "$OWNER/$REPO" \
+  --description "A Formula 1 companion app for iPhone and the web, built with Flutter" \
+  --homepage "https://$OWNER.github.io/$REPO/" >/dev/null 2>&1
 
 echo
 echo "== 5. Switch on GitHub Pages =="

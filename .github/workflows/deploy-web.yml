@@ -1,4 +1,4 @@
-# Builds the web version of F1 Pulse and puts it on GitHub Pages every
+# Builds the web version of Pitbeat and puts it on GitHub Pages every
 # time you push to the main branch, and every 30 minutes to refresh the
 # news feeds that the web version reads (bin/fetch_news.dart).
 name: Deploy web version
@@ -39,8 +39,8 @@ jobs:
       - run: flutter test
         if: github.event_name != 'schedule'
 
-      # The site lives at https://<you>.github.io/f1-pulse/, so every link
-      # starts with /f1-pulse/. The driver photos stay off on the public site.
+      # The site lives at https://<you>.github.io/pitbeat/, so every link
+      # starts with /pitbeat/. The driver photos stay off on the public site.
       - name: Build the website
         run: >
           flutter build web --release

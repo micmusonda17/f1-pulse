@@ -1,6 +1,6 @@
-import 'package:f1_pulse/models/openf1_models.dart';
-import 'package:f1_pulse/tracker/tracker_math.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitbeat/models/openf1_models.dart';
+import 'package:pitbeat/tracker/tracker_math.dart';
 
 /// A made-up location point, [seconds] after midday.
 CarLocation point(int seconds, double x, double y) => CarLocation(

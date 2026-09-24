@@ -1,6 +1,6 @@
 #!/bin/bash
-# F1 Pulse: get the app running on the iPhone simulator.
-# Run it with:  bash ~/Developer/f1-pulse/tool/run_iphone.sh
+# Pitbeat: get the app running on the iPhone simulator.
+# Run it from the project folder:  bash tool/run_iphone.sh
 # Logs go to build/checks/ if something fails.
 
 set -o pipefail
@@ -55,7 +55,7 @@ else
 fi
 
 echo
-echo "== 4. Build F1 Pulse for the simulator =="
+echo "== 4. Build Pitbeat for the simulator =="
 if ! flutter build ios --simulator --debug 2>&1 | tee "$LOG/12_build_ios_sim.txt"; then
   echo
   echo "Build failed. Saving the full Xcode output..."
@@ -104,7 +104,7 @@ echo "Can't see the iPhone? If VS Code or Terminal is full screen, the window op
 echo "on your normal desktop: press Cmd+Tab and choose Device Hub."
 
 echo
-echo "== 6. Run F1 Pulse on the iPhone =="
+echo "== 6. Run Pitbeat on the iPhone =="
 echo "Keys while it runs:  r = hot reload,  R = full restart,  q = quit"
 echo "The first launch on a new simulator prints hundreds of system log lines"
 echo "(WFToolKit, Skipping, TIMEOUT...). That is iOS setting itself up, not your app."

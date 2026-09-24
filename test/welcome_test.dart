@@ -1,7 +1,7 @@
-import 'package:f1_pulse/screens/welcome_screen.dart';
-import 'package:f1_pulse/utils/formatting.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitbeat/screens/welcome_screen.dart';
+import 'package:pitbeat/utils/formatting.dart';
 
 void main() {
   group('greetingFor', () {

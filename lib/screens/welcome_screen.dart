@@ -279,7 +279,7 @@ class NamePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return WelcomeStep(
       step: 1,
-      title: 'Welcome to F1 Pulse',
+      title: 'Welcome to Pitbeat',
       subtitle: 'Races, standings, replays and news in one place. '
           'First, what should we call you?',
       buttons: [

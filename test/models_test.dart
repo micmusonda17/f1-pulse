@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import 'package:f1_pulse/models/openf1_models.dart';
-import 'package:f1_pulse/models/race.dart';
-import 'package:f1_pulse/models/race_result.dart';
-import 'package:f1_pulse/models/standing.dart';
-import 'package:f1_pulse/services/driver_directory.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitbeat/models/openf1_models.dart';
+import 'package:pitbeat/models/race.dart';
+import 'package:pitbeat/models/race_result.dart';
+import 'package:pitbeat/models/standing.dart';
+import 'package:pitbeat/services/driver_directory.dart';
 
 // These JSON samples are copied from real Jolpica and OpenF1 answers.
 // We run jsonDecode on them so the test sees exactly what the app sees.

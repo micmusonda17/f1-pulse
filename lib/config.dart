@@ -27,7 +27,7 @@ class AppConfig {
   /// (bin/fetch_news.dart). The website reads the news from here, and the
   /// phone app falls back to it if a news site is down.
   static const String newsMirrorUrl =
-      'https://micmusonda17.github.io/f1-pulse/news';
+      'https://micmusonda17.github.io/pitbeat/news';
 }
 
 /// A news website that publishes an RSS feed.

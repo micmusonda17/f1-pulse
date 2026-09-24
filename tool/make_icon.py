@@ -1,4 +1,4 @@
-"""Draws the F1 Pulse app icon: a red heartbeat line on carbon black,
+"""Draws the Pitbeat app icon: a red heartbeat line on carbon black,
 with white speed streaks. Original artwork, no Formula 1 marks.
 
 Run it from the project folder to (re)make every icon size:

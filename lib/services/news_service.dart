@@ -45,7 +45,7 @@ class NewsService {
             // Some sites refuse requests that do not look like a browser.
             // Browsers do not let web pages change this header, so we only
             // send it on phones and desktops.
-            headers: kIsWeb ? null : {'User-Agent': 'Mozilla/5.0 (F1 Pulse)'},
+            headers: kIsWeb ? null : {'User-Agent': 'Mozilla/5.0 (Pitbeat)'},
           )
           .timeout(const Duration(seconds: 15));
     } on Exception {

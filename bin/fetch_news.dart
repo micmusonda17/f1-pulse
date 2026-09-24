@@ -3,7 +3,7 @@
 // Browsers do not let a web page read the news sites (CORS),
 // but a page may always read files from its own address. So every 30
 // minutes, GitHub runs this script and publishes the copies next to the
-// website, where the web version of F1 Pulse can read them.
+// website, where the web version of Pitbeat can read them.
 //
 // Try it yourself from the project folder:
 //
@@ -15,8 +15,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:f1_pulse/config.dart';
 import 'package:http/http.dart' as http;
+import 'package:pitbeat/config.dart';
 import 'package:xml/xml.dart';
 
 Future<void> main(List<String> args) async {
@@ -29,7 +29,7 @@ Future<void> main(List<String> args) async {
       final response = await http
           .get(
             Uri.parse(source.url),
-            headers: {'User-Agent': 'Mozilla/5.0 (F1 Pulse news copier)'},
+            headers: {'User-Agent': 'Mozilla/5.0 (Pitbeat news copier)'},
           )
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {

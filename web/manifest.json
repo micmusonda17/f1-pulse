@@ -1,6 +1,6 @@
 {
-    "name": "F1 Pulse",
-    "short_name": "F1 Pulse",
+    "name": "Pitbeat",
+    "short_name": "Pitbeat",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#15151E",

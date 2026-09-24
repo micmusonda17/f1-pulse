@@ -1,10 +1,10 @@
-# F1 Pulse
+# Pitbeat
 
-[![Deploy web version](https://github.com/micmusonda17/f1-pulse/actions/workflows/deploy-web.yml/badge.svg)](https://github.com/micmusonda17/f1-pulse/actions/workflows/deploy-web.yml)
+[![Deploy web version](https://github.com/micmusonda17/pitbeat/actions/workflows/deploy-web.yml/badge.svg)](https://github.com/micmusonda17/pitbeat/actions/workflows/deploy-web.yml)
 
 A Formula 1 companion app for iPhone and the web, built with Flutter. It brings the season calendar, championship standings, animated race replays and the latest news together in one place.
 
-**Live demo:** [micmusonda17.github.io/f1-pulse](https://micmusonda17.github.io/f1-pulse/)
+**Live demo:** [micmusonda17.github.io/pitbeat](https://micmusonda17.github.io/pitbeat/)
 
 ## Features
 
@@ -40,8 +40,8 @@ A Formula 1 companion app for iPhone and the web, built with Flutter. It brings 
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) and, for iOS, Xcode.
 
 ```bash
-git clone https://github.com/micmusonda17/f1-pulse.git
-cd f1-pulse
+git clone https://github.com/micmusonda17/pitbeat.git
+cd pitbeat
 flutter pub get
 flutter run -d chrome        # or pick an iPhone simulator or device
 ```
@@ -99,7 +99,7 @@ tool/
 
 ## Disclaimer
 
-F1 Pulse is an unofficial, non-commercial personal project. It is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
+Pitbeat is an unofficial, non-commercial personal project. It is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
 
 ## Author
 

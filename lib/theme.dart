@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The F1 Pulse colours: racing red on carbon black, with white text.
+/// The Pitbeat colours: racing red on carbon black, with white text.
 /// Every screen gets these from the theme, so changing a colour here
 /// changes it everywhere.
 class F1Colors {

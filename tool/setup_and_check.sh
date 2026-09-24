@@ -1,10 +1,10 @@
 #!/bin/bash
-# F1 Pulse: installs Flutter if it is missing, finishes setting up the
+# Pitbeat: installs Flutter if it is missing, finishes setting up the
 # project, runs every check, then serves the web version on
 # http://localhost:8765 so you can see it in Chrome.
 #
 # Run it from anywhere:
-#   bash ~/Developer/f1-pulse/tool/setup_and_check.sh
+#   bash tool/setup_and_check.sh   (from the project folder)
 #
 # Everything it prints is also saved in build/checks/ so it can be read later.
 
@@ -62,7 +62,7 @@ echo "Flutter SDK folder: $FLUTTER_ROOT_REAL" | tee -a "$LOGS/2_flutter_version.
 echo "Quarantined files: $(xattr -rl "$FLUTTER_ROOT_REAL/bin/cache" 2>/dev/null | grep -c com.apple.quarantine)" | tee -a "$LOGS/2_flutter_version.txt"
 
 step "3. Create the platform folders (keeps our lib/ and test/ files)"
-flutter create --project-name f1_pulse --org com.micmusonda \
+flutter create --project-name pitbeat --org com.micmusonda \
   --platforms android,ios,web,macos . 2>&1 | tee "$LOGS/3_create.txt"
 
 step "4. Add the packages"
@@ -107,7 +107,7 @@ step "9. API checks from your Mac"
     curl -s -o /dev/null -D - -H "Origin: http://localhost:8765" "$url" | grep -i -E '^HTTP|access-control-allow-origin'
   done
   echo "--- RaceFans with the app's User-Agent"
-  curl -s -o /dev/null -w "%{http_code}\n" -A "Mozilla/5.0 (F1 Pulse)" "https://www.racefans.net/feed/"
+  curl -s -o /dev/null -w "%{http_code}\n" -A "Mozilla/5.0 (Pitbeat)" "https://www.racefans.net/feed/"
   echo "--- A driver photo from formula1.com"
   curl -s -o /dev/null -w "%{http_code} %{content_type}\n" "https://media.formula1.com/d_driver_fallback_image.png/content/dam/fom-website/drivers/L/LEWHAM01_Lewis_Hamilton/lewham01.png.transform/1col/image.png"
   echo "--- OpenF1 date filter, typed as > and <"

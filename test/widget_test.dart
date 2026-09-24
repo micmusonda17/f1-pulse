@@ -1,8 +1,8 @@
-import 'package:f1_pulse/widgets/common_widgets.dart';
-import 'package:f1_pulse/widgets/countdown.dart';
-import 'package:f1_pulse/widgets/driver_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitbeat/widgets/common_widgets.dart';
+import 'package:pitbeat/widgets/countdown.dart';
+import 'package:pitbeat/widgets/driver_widgets.dart';
 
 void main() {
   testWidgets('ErrorView shows the message and the retry button works',

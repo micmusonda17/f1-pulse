@@ -10,17 +10,17 @@ import 'theme.dart';
 
 /// Where the app starts, just like `if __name__ == "__main__":` in Python.
 void main() {
-  runApp(const F1PulseApp());
+  runApp(const PitbeatApp());
 }
 
 /// The whole app: its name, its colours and its first screen.
-class F1PulseApp extends StatelessWidget {
-  const F1PulseApp({super.key});
+class PitbeatApp extends StatelessWidget {
+  const PitbeatApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'F1 Pulse',
+      title: 'Pitbeat',
       debugShowCheckedModeBanner: false,
       theme: buildF1Theme(), // Colours and font, from lib/theme.dart
       home: const StartGate(),

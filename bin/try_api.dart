@@ -3,14 +3,13 @@
 //
 //   dart run bin/try_api.dart
 //
-// It prints the season, the top five drivers and the last race's podium,
-// just like the Python version of F1 Pulse did in the terminal.
+// It prints the season, the top five drivers and the last race's podium.
 
 // print() is fine in a terminal script, so we switch that lint off here.
 // ignore_for_file: avoid_print
 
-import 'package:f1_pulse/services/jolpica_api.dart';
-import 'package:f1_pulse/utils/formatting.dart';
+import 'package:pitbeat/services/jolpica_api.dart';
+import 'package:pitbeat/utils/formatting.dart';
 
 Future<void> main() async {
   final api = JolpicaApi();

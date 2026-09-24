@@ -59,7 +59,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('F1 Pulse'),
+        title: const Text('Pitbeat'),
         actions: [
           IconButton(
             onPressed: _openSettings,

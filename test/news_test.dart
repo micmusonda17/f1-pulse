@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import 'package:f1_pulse/config.dart';
-import 'package:f1_pulse/models/news_item.dart';
-import 'package:f1_pulse/services/news_service.dart';
-import 'package:f1_pulse/utils/formatting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:pitbeat/config.dart';
+import 'package:pitbeat/models/news_item.dart';
+import 'package:pitbeat/services/news_service.dart';
+import 'package:pitbeat/utils/formatting.dart';
 
 // A cut-down copy of a real RSS feed.
 const sampleFeed = '''<?xml version="1.0" encoding="UTF-8"?>
