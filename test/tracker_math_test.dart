@@ -170,4 +170,115 @@ void main() {
       expect(lapTimeOrGap(null, 92.456), 'No time');
     });
   });
+
+  group('tyres, pit stops, flags and weather', () {
+    final laps = [
+      Lap(driverNumber: 1, lapNumber: 2, start: at(90), duration: 90.0),
+      Lap(driverNumber: 1, lapNumber: 1, start: at(0), duration: 90.0),
+      Lap(driverNumber: 44, lapNumber: 1, start: at(2), duration: 91.0),
+    ];
+
+    test('lapsByDriver and driverLapAt', () {
+      final byDriver = lapsByDriver(laps);
+      expect(byDriver[1]!.map((lap) => lap.lapNumber).toList(), [1, 2]);
+      expect(driverLapAt(byDriver[1]!, at(30)), 1);
+      expect(driverLapAt(byDriver[1]!, at(100)), 2);
+      expect(driverLapAt(byDriver[44]!, at(1)), isNull); // Not started
+    });
+
+    test('compoundOn finds the tyre for a lap', () {
+      const stints = [
+        Stint(driverNumber: 1, lapStart: 1, lapEnd: 20, compound: 'MEDIUM'),
+        Stint(driverNumber: 1, lapStart: 21, lapEnd: null, compound: 'HARD'),
+        Stint(driverNumber: 44, lapStart: 1, lapEnd: 30, compound: 'SOFT'),
+      ];
+      expect(compoundOn(stints, 1, 5), 'MEDIUM');
+      expect(compoundOn(stints, 1, 40), 'HARD');
+      expect(compoundOn(stints, 44, 5), 'SOFT');
+      expect(compoundOn(stints, 16, 5), isNull); // No stints for car 16
+    });
+
+    test('pit stops: in the lane, and how many so far', () {
+      final stops = [
+        PitStop(driverNumber: 1, date: at(100), laneSeconds: 22.0),
+        PitStop(driverNumber: 1, date: at(500), laneSeconds: 21.0),
+      ];
+      expect(isInPitLane(stops, 1, at(110)), isTrue);
+      expect(isInPitLane(stops, 1, at(130)), isFalse); // Out after 22 s
+      expect(pitStopsBefore(stops, 1, at(130)), 1);
+      expect(pitStopsBefore(stops, 1, at(600)), 2);
+    });
+
+    test('race control: the latest message, only while it is fresh', () {
+      final messages = [
+        RaceControlMessage(
+          date: at(10),
+          category: 'Other',
+          message: 'Q1 STARTED',
+          qualifyingPhase: 1,
+        ),
+        RaceControlMessage(
+          date: at(100),
+          category: 'SafetyCar',
+          message: 'SAFETY CAR DEPLOYED',
+        ),
+      ];
+      expect(latestMessageAt(messages, at(120))?.message,
+          'SAFETY CAR DEPLOYED');
+      expect(latestMessageAt(messages, at(500)), isNull); // Too old now
+      expect(qualifyingPhaseAt(messages, at(120)), 1);
+      expect(qualifyingPhaseAt(messages, at(5)), isNull);
+    });
+
+    test('weatherAt picks the latest reading', () {
+      final readings = [
+        WeatherReading(
+          date: at(0),
+          airTemperature: 28.0,
+          trackTemperature: 41.0,
+          isRaining: false,
+        ),
+        WeatherReading(
+          date: at(60),
+          airTemperature: 27.0,
+          trackTemperature: 38.0,
+          isRaining: true,
+        ),
+      ];
+      expect(weatherAt(readings, at(30))?.trackTemperature, 41);
+      expect(weatherAt(readings, at(90))?.isRaining, isTrue);
+    });
+  });
+
+  group('data saver: cars placed from lap times', () {
+    // A straight "track" from (0, 0) to (20, 0), drawn with three points.
+    const outline = [Offset(0, 0), Offset(10, 0), Offset(20, 0)];
+    final laps = [
+      Lap(driverNumber: 1, lapNumber: 1, start: at(0), duration: 10.0),
+      Lap(driverNumber: 1, lapNumber: 2, start: at(10), duration: 10.0),
+    ];
+
+    test('halfway through a lap is halfway along the outline', () {
+      expect(positionFromLaps(laps, outline, at(5)), const Offset(10, 0));
+      expect(
+        positionFromLaps(laps, outline, at(2, 500)),
+        const Offset(5, 0),
+      );
+      expect(positionFromLaps(laps, outline, at(15)), const Offset(10, 0));
+    });
+
+    test('no position before the start or after the last lap', () {
+      final early = at(0).subtract(const Duration(seconds: 1));
+      expect(positionFromLaps(laps, outline, early), isNull);
+      expect(positionFromLaps(laps, outline, at(25)), isNull);
+    });
+
+    test('a lap without a time ends when the next one starts', () {
+      final noTime = [
+        Lap(driverNumber: 1, lapNumber: 1, start: at(0), duration: null),
+        Lap(driverNumber: 1, lapNumber: 2, start: at(10), duration: 10.0),
+      ];
+      expect(positionFromLaps(noTime, outline, at(5)), const Offset(10, 0));
+    });
+  });
 }

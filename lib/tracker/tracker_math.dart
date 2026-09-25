@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import '../models/openf1_models.dart';
@@ -151,4 +152,159 @@ bool isInGarageAt(List<CarLocation> points, DateTime time) {
   if (after > 0 && atZero(points[after - 1])) return true;
   if (after < points.length && atZero(points[after])) return true;
   return false;
+}
+
+// ----------------------------------------------------------------------
+// Tyres, pit stops, race control and weather (Chapter 44)
+// ----------------------------------------------------------------------
+
+/// Every driver's laps, keyed by driver number, in lap order.
+Map<int, List<Lap>> lapsByDriver(List<Lap> laps) {
+  final byDriver = <int, List<Lap>>{};
+  for (final lap in laps) {
+    byDriver.putIfAbsent(lap.driverNumber, () => []).add(lap);
+  }
+  for (final list in byDriver.values) {
+    list.sort((a, b) => a.lapNumber.compareTo(b.lapNumber));
+  }
+  return byDriver;
+}
+
+/// The lap one driver is on at [time]: the last lap they had started.
+/// [driverLaps] is one driver's laps in lap order. Null before lap 1.
+int? driverLapAt(List<Lap> driverLaps, DateTime time) {
+  int? lap;
+  for (final candidate in driverLaps) {
+    final start = candidate.start;
+    if (start == null) continue;
+    if (start.isAfter(time)) break;
+    lap = candidate.lapNumber;
+  }
+  return lap;
+}
+
+/// The tyre [driverNumber] is on during [lap]: the compound of their
+/// latest stint that had started by then.
+String? compoundOn(List<Stint> stints, int driverNumber, int lap) {
+  Stint? current;
+  for (final stint in stints) {
+    if (stint.driverNumber != driverNumber || stint.lapStart > lap) continue;
+    if (current == null || stint.lapStart > current.lapStart) current = stint;
+  }
+  return current?.compound;
+}
+
+/// True while [driverNumber] is in the pit lane at [time]. Stops without a
+/// time are counted as the usual 25 seconds or so.
+bool isInPitLane(List<PitStop> stops, int driverNumber, DateTime time) {
+  for (final stop in stops) {
+    if (stop.driverNumber != driverNumber || stop.date.isAfter(time)) continue;
+    final seconds = stop.laneSeconds ?? 25;
+    final exit =
+        stop.date.add(Duration(milliseconds: (seconds * 1000).round()));
+    if (time.isBefore(exit)) return true;
+  }
+  return false;
+}
+
+/// How many times [driverNumber] had come into the pits by [time].
+int pitStopsBefore(List<PitStop> stops, int driverNumber, DateTime time) {
+  var count = 0;
+  for (final stop in stops) {
+    if (stop.driverNumber == driverNumber && !stop.date.isAfter(time)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/// The newest race control message at [time], if it is no older than
+/// [within]. [messages] must be sorted by time, oldest first.
+RaceControlMessage? latestMessageAt(
+  List<RaceControlMessage> messages,
+  DateTime time, {
+  Duration within = const Duration(seconds: 60),
+}) {
+  RaceControlMessage? latest;
+  for (final message in messages) {
+    if (message.date.isAfter(time)) break;
+    latest = message;
+  }
+  if (latest == null || time.difference(latest.date) > within) return null;
+  return latest;
+}
+
+/// Which part of qualifying is running at [time]: 1, 2 or 3. Null outside
+/// qualifying. Race control tags its messages with the part.
+int? qualifyingPhaseAt(List<RaceControlMessage> messages, DateTime time) {
+  int? phase;
+  for (final message in messages) {
+    if (message.date.isAfter(time)) break;
+    phase = message.qualifyingPhase ?? phase;
+  }
+  return phase;
+}
+
+/// The latest weather reading at [time], or null before the first one.
+/// [readings] must be sorted by time, oldest first.
+WeatherReading? weatherAt(List<WeatherReading> readings, DateTime time) {
+  WeatherReading? latest;
+  for (final reading in readings) {
+    if (reading.date.isAfter(time)) break;
+    latest = reading;
+  }
+  return latest;
+}
+
+// ----------------------------------------------------------------------
+// Data saver: cars placed from lap times instead of GPS (Chapter 43)
+// ----------------------------------------------------------------------
+
+/// Where a car is at [time], worked out from its lap times alone.
+///
+/// [outline] is one lap of GPS points from the start line, in the order
+/// the car drove them, a few times a second. So a point halfway through the
+/// list is where that car was halfway through its lap. If another car is
+/// 40% of the way through its own lap time, we put it 40% of the way along
+/// the list. Every car slows for the same corners, so this looks right,
+/// and it needs only the lap times: no GPS download at all.
+///
+/// [laps] is one driver's laps in lap order. Null when the car is not on a
+/// timed lap: before the start, in the garage, or after the finish.
+Offset? positionFromLaps(List<Lap> laps, List<Offset> outline, DateTime time) {
+  if (outline.length < 2) return null;
+
+  // Newest lap first: the car is on the last lap it had started.
+  for (var i = laps.length - 1; i >= 0; i--) {
+    final start = laps[i].start;
+    if (start == null || start.isAfter(time)) continue;
+
+    // When does that lap end? Its own time, or else when the next begins.
+    final seconds = laps[i].duration;
+    final DateTime? end;
+    if (seconds != null) {
+      end = start.add(Duration(milliseconds: (seconds * 1000).round()));
+    } else if (i + 1 < laps.length) {
+      end = laps[i + 1].start;
+    } else {
+      end = null;
+    }
+    if (end == null || !time.isBefore(end) || !end.isAfter(start)) {
+      return null; // Between laps: in the pits, the garage, or finished
+    }
+
+    // How far through the lap, from 0.0 to 1.0, and so where in the list.
+    final fraction = time.difference(start).inMicroseconds /
+        end.difference(start).inMicroseconds;
+    final position = fraction * (outline.length - 1);
+    final index = position.floor();
+    final along = position - index; // How far from this point to the next
+    final from = outline[index];
+    final to = outline[math.min(index + 1, outline.length - 1)];
+    return Offset(
+      from.dx + (to.dx - from.dx) * along,
+      from.dy + (to.dy - from.dy) * along,
+    );
+  }
+  return null;
 }

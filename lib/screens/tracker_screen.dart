@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
+import '../services/app_preferences.dart';
 import '../theme.dart';
 import '../tracker/track_painter.dart';
 import '../tracker/tracker_controller.dart';
@@ -26,7 +27,11 @@ class _TrackerScreenState extends State<TrackerScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = TrackerController(session: widget.session, mode: widget.mode);
+    _controller = TrackerController(
+      session: widget.session,
+      mode: widget.mode,
+      saveData: AppPreferences.instance.dataSaver,
+    );
     _controller.start();
   }
 
@@ -63,6 +68,9 @@ class _TrackerScreenState extends State<TrackerScreen> {
           final message = _controller.message;
           final lap = _controller.currentLap;
           final timeLeft = _controller.timeLeft;
+          final phase = _controller.qualifyingPhase;
+          final weather = _controller.weather;
+          final raceControl = _controller.latestMessage;
           return Column(
             children: [
               Expanded(
@@ -103,16 +111,45 @@ class _TrackerScreenState extends State<TrackerScreen> {
                             value: formatMinutes(timeLeft),
                           ),
                         ),
+                      if (phase != null)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: MapBadge(label: 'Q', value: '$phase'),
+                        ),
+                      if (weather != null)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: MapBadge(
+                            label: 'TRACK ',
+                            value: '${weather.trackTemperature.round()}°',
+                            suffix: weather.isRaining
+                                ? '  RAIN'
+                                : '  AIR ${weather.airTemperature.round()}°',
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
+              if (raceControl != null) RaceControlBanner(message: raceControl),
               if (message != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
                     message,
                     style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              if (_controller.placesCarsByLaps)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Data saver: cars placed from lap times, not GPS',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: F1Colors.muted,
+                    ),
                   ),
                 ),
               if (widget.mode == TrackerMode.replay)
@@ -128,7 +165,8 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   bestLaps: _controller.showsLapTimes
                       ? _controller.bestLaps
                       : null,
-                  inGarage: _controller.inGarage,
+                  notes: _controller.carNotes,
+                  tyres: _controller.tyres,
                 ),
               ),
             ],
@@ -297,13 +335,15 @@ class Leaderboard extends StatelessWidget {
     required this.order,
     required this.drivers,
     this.bestLaps,
-    this.inGarage = const {},
+    this.notes = const {},
+    this.tyres = const {},
   });
 
   final List<int> order; // Driver numbers, leader first
   final Map<int, DriverInfo> drivers;
   final Map<int, double>? bestLaps; // Practice and qualifying only
-  final Set<int> inGarage;
+  final Map<int, String> notes; // "In the pit lane", "2 stops"...
+  final Map<int, String> tyres; // "SOFT", "MEDIUM"...
 
   @override
   Widget build(BuildContext context) {
@@ -350,15 +390,22 @@ class Leaderboard extends StatelessWidget {
           ),
           title: Text(driver?.fullName ?? 'Car $number'),
           subtitle: Text(
-            inGarage.contains(number)
-                ? '${driver?.team ?? ''}  ·  In the garage'
-                : driver?.team ?? '',
+            [driver?.team ?? '', ?notes[number]].join('  ·  '),
           ),
-          trailing: Text(
-            times == null
-                ? driver?.acronym ?? '$number'
-                : lapTimeOrGap(times[number], fastest),
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (tyres[number] case final compound?) ...[
+                TyreDot(compound: compound),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                times == null
+                    ? driver?.acronym ?? '$number'
+                    : lapTimeOrGap(times[number], fastest),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
         );
       },
@@ -372,4 +419,84 @@ String lapTimeOrGap(double? seconds, double? fastest) {
   if (seconds == null || fastest == null) return 'No time';
   if (seconds == fastest) return formatLapTime(seconds);
   return '+${(seconds - fastest).toStringAsFixed(3)}';
+}
+
+/// A tyre in its compound's colour with its first letter, like the TV:
+/// red S for soft, yellow M, white H, green I for intermediate, blue W.
+class TyreDot extends StatelessWidget {
+  const TyreDot({super.key, required this.compound});
+
+  final String compound; // "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
+
+  static const Map<String, Color> colours = {
+    'SOFT': Color(0xFFE10600),
+    'MEDIUM': Color(0xFFFFD12E),
+    'HARD': Color(0xFFF0F0F0),
+    'INTERMEDIATE': Color(0xFF43B02A),
+    'WET': Color(0xFF0067AD),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = colours[compound] ?? F1Colors.muted;
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: colour, width: 2.5),
+      ),
+      child: Text(
+        compound.isEmpty ? '?' : compound[0], // The first letter
+        style: TextStyle(
+          color: colour,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+/// The latest message from race control, like the ticker on TV:
+/// "SAFETY CAR DEPLOYED", with a stripe in the flag's colour.
+class RaceControlBanner extends StatelessWidget {
+  const RaceControlBanner({super.key, required this.message});
+
+  final RaceControlMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: F1Colors.surface,
+        border: Border(
+          left: BorderSide(color: flagColour(message), width: 4),
+        ),
+      ),
+      child: Text(
+        message.message,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+/// The colour of a race control message: the flag's own colour, orange
+/// for the safety car, grey for everything else.
+Color flagColour(RaceControlMessage message) {
+  final flag = message.flag ?? '';
+  if (message.category == 'SafetyCar') return Colors.orange;
+  if (flag.contains('RED')) return Colors.red;
+  if (flag.contains('YELLOW')) return Colors.amber;
+  if (flag.contains('BLUE')) return Colors.blue;
+  if (flag.contains('GREEN') || flag == 'CLEAR') return Colors.green;
+  if (flag.contains('CHEQUERED')) return Colors.white;
+  return F1Colors.muted;
 }

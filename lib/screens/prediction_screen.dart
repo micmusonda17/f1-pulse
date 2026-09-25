@@ -9,6 +9,7 @@ import '../theme.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import '../widgets/spoiler_gate.dart';
 
 /// Opens the full prediction for one race. The Future finishes when you
 /// come back.
@@ -79,7 +80,12 @@ class _PredictionScreenState extends State<PredictionScreen> {
               ),
             );
           }
-          return _buildList(prediction);
+          // The reasons mention recent results, so they could spoil one.
+          return SpoilerGate(
+            topic: 'predictions',
+            what: 'The predictions',
+            child: _buildList(prediction),
+          );
         },
       ),
     );
@@ -235,45 +241,52 @@ class _PredictionTeaserState extends State<PredictionTeaser> {
                 ),
               ),
               const SizedBox(height: 4),
-              FutureBuilder<RacePrediction>(
-                future: _prediction,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const _TeaserNote(
-                      'Predictions are not available right now. '
-                      'Tap to try again.',
-                    );
-                  }
-                  final prediction = snapshot.data;
-                  if (prediction == null) {
-                    return const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: LinearProgressIndicator(),
-                    );
-                  }
-                  if (prediction.ranking.isEmpty) {
-                    return const _TeaserNote(
-                      'Predictions start after the first race of the season.',
-                    );
-                  }
-                  final topThree = prediction.ranking.take(3).toList();
-                  return Column(
-                    children: [
-                      for (var i = 0; i < topThree.length; i++)
-                        ChanceRow(
-                          rank: i + 1,
-                          prediction: topThree[i],
-                          info: _directory[topThree[i].driver.code],
-                          showReasons: false,
-                        ),
-                    ],
-                  );
-                },
+              SpoilerGate(
+                topic: 'predictions',
+                what: 'The predictions',
+                child: _buildTopThree(),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTopThree() {
+    return FutureBuilder<RacePrediction>(
+      future: _prediction,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const _TeaserNote(
+            'Predictions are not available right now. Tap to try again.',
+          );
+        }
+        final prediction = snapshot.data;
+        if (prediction == null) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: LinearProgressIndicator(),
+          );
+        }
+        if (prediction.ranking.isEmpty) {
+          return const _TeaserNote(
+            'Predictions start after the first race of the season.',
+          );
+        }
+        final topThree = prediction.ranking.take(3).toList();
+        return Column(
+          children: [
+            for (var i = 0; i < topThree.length; i++)
+              ChanceRow(
+                rank: i + 1,
+                prediction: topThree[i],
+                info: _directory[topThree[i].driver.code],
+                showReasons: false,
+              ),
+          ],
+        );
+      },
     );
   }
 }

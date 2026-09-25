@@ -251,6 +251,46 @@ void main() {
     });
   });
 
+  group('tyres, pit stops, race control and weather', () {
+    test('read OpenF1 JSON', () {
+      final stint = Stint.fromJson(decode(
+        '{"driver_number": 16, "lap_start": 1, "lap_end": 20, '
+        '"compound": "SOFT"}',
+      ));
+      expect(stint.compound, 'SOFT');
+      expect(stint.lapEnd, 20);
+
+      final stop = PitStop.fromJson(decode(
+        '{"driver_number": 16, "date": "2025-10-26T20:46:37.358000+00:00", '
+        '"lane_duration": 22.215}',
+      ));
+      expect(stop.laneSeconds, 22.215);
+
+      final message = RaceControlMessage.fromJson(decode(
+        '{"date": "2023-06-04T14:21:01+00:00", "category": "Flag", '
+        '"flag": "YELLOW", "message": "YELLOW IN TRACK SECTOR 7", '
+        '"qualifying_phase": null}',
+      ));
+      expect(message.flag, 'YELLOW');
+      expect(message.qualifyingPhase, isNull);
+
+      final weather = WeatherReading.fromJson(decode(
+        '{"date": "2023-05-07T18:42:25.233000+00:00", '
+        '"air_temperature": 27.8, "track_temperature": 52.5, "rainfall": 0}',
+      ));
+      expect(weather.trackTemperature, 52.5);
+      expect(weather.isRaining, isFalse);
+    });
+
+    test('older pit stops only have pit_duration', () {
+      final stop = PitStop.fromJson(decode(
+        '{"driver_number": 1, "date": "2023-03-05T16:00:00+00:00", '
+        '"pit_duration": 23.4}',
+      ));
+      expect(stop.laneSeconds, 23.4);
+    });
+  });
+
   group('colourFromHex', () {
     test('turns a team colour into a Flutter Color', () {
       expect(colourFromHex('F58020'), const Color(0xFFF58020));

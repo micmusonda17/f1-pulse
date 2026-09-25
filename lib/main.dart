@@ -6,14 +6,49 @@ import 'screens/calendar_screen.dart';
 import 'screens/news_screen.dart';
 import 'screens/standings_screen.dart';
 import 'screens/tracker_hub_screen.dart';
+import 'screens/tracker_screen.dart';
 import 'screens/welcome_screen.dart';
+import 'services/api_exception.dart';
+import 'services/app_preferences.dart';
+import 'services/jolpica_api.dart';
+import 'services/openf1_api.dart';
+import 'services/phone_cache.dart';
+import 'services/race_alerts.dart';
 import 'services/settings_store.dart';
 import 'theme.dart';
+import 'tracker/tracker_controller.dart';
 
 /// Where the app starts, just like `if __name__ == "__main__":` in Python.
 void main() {
   LicenseRegistry.addLicense(_ourLicences);
+  // Keep copies of calendar, standings and results on the phone, so they
+  // still show with no signal, and data saver can reuse them (Chapter 43).
+  JolpicaApi.cache = PhoneCache();
   runApp(const PitbeatApp());
+}
+
+/// Lets code outside any screen open a new screen, like tapping an alert.
+/// MaterialApp uses it for its Navigator, so it is always the real one.
+final GlobalKey<NavigatorState> appNavigator = GlobalKey<NavigatorState>();
+
+/// Opens the replay a "replay is ready" alert points to. The payload is
+/// the session's start time, which is how findSession finds it.
+Future<void> openReplayFromAlert(String? payload) async {
+  final start = DateTime.tryParse(payload ?? '');
+  if (start == null) return; // A reminder: just opening the app is enough
+  try {
+    final session = await OpenF1Api.instance.findSession(start);
+    final navigator = appNavigator.currentState;
+    if (session == null || navigator == null) return;
+    navigator.push(
+      MaterialPageRoute(
+        builder: (context) =>
+            TrackerScreen(session: session, mode: TrackerMode.replay),
+      ),
+    );
+  } on ApiException {
+    // OpenF1 could not be reached. The app simply opens where it was.
+  }
 }
 
 /// The licences of the free files we ship with the app, for the Licences
@@ -36,6 +71,7 @@ class PitbeatApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Pitbeat',
+      navigatorKey: appNavigator,
       debugShowCheckedModeBanner: false,
       theme: buildF1Theme(), // Colours and font, from lib/theme.dart
       home: const StartGate(),
@@ -69,7 +105,15 @@ class _StartGateState extends State<StartGate> {
     } catch (_) {
       // Could not read the settings: show the welcome pages to be safe.
     }
-    if (mounted) setState(() => _welcomeDone = done);
+    // The switches from Settings, before any screen needs them.
+    await AppPreferences.instance.load();
+    await RaceAlerts.instance.init(onTap: openReplayFromAlert);
+    if (!mounted) return;
+    setState(() => _welcomeDone = done);
+
+    // Opened by tapping a "replay is ready" alert? Go straight to it.
+    final payload = await RaceAlerts.instance.launchPayload();
+    if (done && payload != null) openReplayFromAlert(payload);
   }
 
   @override

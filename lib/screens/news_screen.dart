@@ -3,9 +3,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
 import '../models/news_item.dart';
+import '../services/app_preferences.dart';
 import '../services/news_service.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/spoiler_gate.dart';
 
 /// The fourth tab: headlines from RSS feeds.
 class NewsScreen extends StatefulWidget {
@@ -91,37 +93,42 @@ class _NewsScreenState extends State<NewsScreen> {
             ),
           ),
           Expanded(
-            child: FutureBuilder<List<NewsItem>>(
-              future: _news,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LoadingView(message: 'Loading headlines');
-                }
-                if (snapshot.hasError) {
-                  return ErrorView(
-                    message: '${snapshot.error}',
-                    onRetry: _refresh,
-                  );
-                }
-                final news = snapshot.data ?? [];
-                if (news.isEmpty) {
-                  return const Center(child: Text('No stories right now.'));
-                }
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView.builder(
-                    itemCount: news.length,
-                    itemBuilder: (context, index) => NewsCard(
-                      item: news[index],
-                      onTap: () => _open(news[index]),
-                    ),
-                  ),
-                );
-              },
+            child: SpoilerGate(
+              topic: 'news',
+              what: 'The headlines',
+              child: _buildNews(),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildNews() {
+    return FutureBuilder<List<NewsItem>>(
+      future: _news,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const LoadingView(message: 'Loading headlines');
+        }
+        if (snapshot.hasError) {
+          return ErrorView(message: '${snapshot.error}', onRetry: _refresh);
+        }
+        final news = snapshot.data ?? [];
+        if (news.isEmpty) {
+          return const Center(child: Text('No stories right now.'));
+        }
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            itemCount: news.length,
+            itemBuilder: (context, index) => NewsCard(
+              item: news[index],
+              onTap: () => _open(news[index]),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -137,7 +144,9 @@ class NewsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final published = item.published;
-    final image = item.imageUrl;
+    // Data saver: no pictures. They are most of what a news page downloads.
+    final image =
+        AppPreferences.instance.dataSaver ? null : item.imageUrl;
     final byline = published == null
         ? item.source
         : '${item.source}  ·  ${formatTimeAgo(published)}';

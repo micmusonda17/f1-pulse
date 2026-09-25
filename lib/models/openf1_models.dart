@@ -181,3 +181,102 @@ class Lap {
     );
   }
 }
+
+/// One set of tyres: a driver ran [compound] from lap [lapStart] to
+/// [lapEnd]. [lapEnd] is null while the stint is still going.
+class Stint {
+  const Stint({
+    required this.driverNumber,
+    required this.lapStart,
+    required this.lapEnd,
+    required this.compound,
+  });
+
+  final int driverNumber;
+  final int lapStart;
+  final int? lapEnd;
+  final String compound; // "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
+
+  factory Stint.fromJson(Map<String, dynamic> json) {
+    return Stint(
+      driverNumber: json['driver_number'] as int,
+      lapStart: (json['lap_start'] as int?) ?? 1,
+      lapEnd: json['lap_end'] as int?,
+      compound: (json['compound'] as String?) ?? 'UNKNOWN',
+    );
+  }
+}
+
+/// One trip through the pit lane.
+class PitStop {
+  const PitStop({
+    required this.driverNumber,
+    required this.date,
+    required this.laneSeconds,
+  });
+
+  final int driverNumber;
+  final DateTime date; // When the car came into the pit lane
+  final double? laneSeconds; // Time from pit entry to pit exit
+
+  factory PitStop.fromJson(Map<String, dynamic> json) {
+    // lane_duration is the new name. Older data only has pit_duration.
+    final seconds = json['lane_duration'] ?? json['pit_duration'];
+    return PitStop(
+      driverNumber: json['driver_number'] as int,
+      date: DateTime.parse(json['date'] as String),
+      laneSeconds: (seconds as num?)?.toDouble(),
+    );
+  }
+}
+
+/// A message from race control: flags, safety cars, penalties.
+class RaceControlMessage {
+  const RaceControlMessage({
+    required this.date,
+    required this.category,
+    required this.message,
+    this.flag,
+    this.qualifyingPhase,
+  });
+
+  final DateTime date;
+  final String category; // "Flag", "SafetyCar", "Drs", "Other"...
+  final String message; // "SAFETY CAR DEPLOYED"
+  final String? flag; // "YELLOW", "RED", "CHEQUERED"... Null if not a flag
+  final int? qualifyingPhase; // 1, 2 or 3 in qualifying, otherwise null
+
+  factory RaceControlMessage.fromJson(Map<String, dynamic> json) {
+    return RaceControlMessage(
+      date: DateTime.parse(json['date'] as String),
+      category: (json['category'] as String?) ?? '',
+      message: (json['message'] as String?) ?? '',
+      flag: json['flag'] as String?,
+      qualifyingPhase: json['qualifying_phase'] as int?,
+    );
+  }
+}
+
+/// The weather at the track, measured about once a minute.
+class WeatherReading {
+  const WeatherReading({
+    required this.date,
+    required this.airTemperature,
+    required this.trackTemperature,
+    required this.isRaining,
+  });
+
+  final DateTime date;
+  final double airTemperature; // Degrees Celsius
+  final double trackTemperature;
+  final bool isRaining;
+
+  factory WeatherReading.fromJson(Map<String, dynamic> json) {
+    return WeatherReading(
+      date: DateTime.parse(json['date'] as String),
+      airTemperature: (json['air_temperature'] as num?)?.toDouble() ?? 0,
+      trackTemperature: (json['track_temperature'] as num?)?.toDouble() ?? 0,
+      isRaining: ((json['rainfall'] as num?) ?? 0) > 0,
+    );
+  }
+}

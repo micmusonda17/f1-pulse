@@ -54,6 +54,22 @@ class SettingsStore {
     }
   }
 
+  /// An on or off setting, like data saver. Off until it is switched on.
+  Future<bool> getFlag(String key) async {
+    return (await _prefs.getBool(key)) ?? false;
+  }
+
+  Future<void> setFlag(String key, bool on) async {
+    await _prefs.setBool(key, on);
+  }
+
+  /// Any saved text, by key. PhoneCache keeps copies of answers here.
+  Future<String?> getText(String key) => _prefs.getString(key);
+
+  Future<void> setText(String key, String value) async {
+    await _prefs.setString(key, value);
+  }
+
   Future<String?> getOpenF1Username() => _prefs.getString(_usernameKey);
   Future<String?> getOpenF1Password() => _prefs.getString(_passwordKey);
 

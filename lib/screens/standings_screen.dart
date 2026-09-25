@@ -9,6 +9,7 @@ import '../services/settings_store.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import '../widgets/spoiler_gate.dart';
 
 /// The second tab: drivers' and constructors' championships.
 class StandingsScreen extends StatelessWidget {
@@ -27,8 +28,12 @@ class StandingsScreen extends StatelessWidget {
             tabs: [Tab(text: 'Drivers'), Tab(text: 'Teams')],
           ),
         ),
-        body: const TabBarView(
-          children: [DriverStandingsTab(), TeamStandingsTab()],
+        body: const SpoilerGate(
+          topic: 'standings',
+          what: 'The standings',
+          child: TabBarView(
+            children: [DriverStandingsTab(), TeamStandingsTab()],
+          ),
         ),
       ),
     );

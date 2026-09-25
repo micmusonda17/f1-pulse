@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config.dart';
 import '../models/standing.dart';
+import '../services/app_preferences.dart';
 
 /// A round driver photo with a ring in the team colour.
 /// Shows the driver's code instead if there is no photo or it fails to load.
@@ -21,8 +22,11 @@ class DriverAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // No photo on the public website (see AppConfig.showDriverPhotos).
-    final url = AppConfig.showDriverPhotos ? photoUrl : null;
+    // No photo on the public website (see AppConfig.showDriverPhotos), and
+    // none with data saver on: every photo is a download.
+    final url = AppConfig.showDriverPhotos && !AppPreferences.instance.dataSaver
+        ? photoUrl
+        : null;
     return Container(
       width: size,
       height: size,

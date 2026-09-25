@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/race.dart';
 import '../services/jolpica_api.dart';
+import '../services/race_alerts.dart';
 import '../services/settings_store.dart';
 import '../theme.dart';
 import '../utils/formatting.dart';
@@ -29,7 +30,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _races = _api.getSchedule(); // Start downloading straight away
+    _planAlerts();
     _loadName();
+  }
+
+  /// Once the calendar arrives, plan the session reminders and replay
+  /// alerts from it (Chapter 42). If it fails, the FutureBuilder says so.
+  Future<void> _planAlerts() async {
+    try {
+      await RaceAlerts.instance.refresh(races: await _races);
+    } catch (_) {
+      // Nothing to plan without a calendar.
+    }
   }
 
   Future<void> _loadName() async {
@@ -46,6 +58,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (_) {
       // Nothing to do here: the FutureBuilder below shows the error.
     }
+    _planAlerts();
   }
 
   Future<void> _openSettings() async {

@@ -19,11 +19,15 @@ enum TrackerMode { replay, live }
 /// car is. It knows nothing about widgets. The screen listens to it and
 /// redraws whenever it calls notifyListeners().
 class TrackerController extends ChangeNotifier {
-  TrackerController({required this.session, required this.mode})
-      : clock = mode == TrackerMode.live ? _liveClock() : session.start;
+  TrackerController({
+    required this.session,
+    required this.mode,
+    this.saveData = false,
+  }) : clock = mode == TrackerMode.live ? _liveClock() : session.start;
 
   final OpenF1Session session;
   final TrackerMode mode;
+  final bool saveData; // Data saver: see placesCarsByLaps
   final OpenF1Api _api = OpenF1Api.instance;
 
   // ------------------------------------------------------------------
@@ -50,6 +54,11 @@ class TrackerController extends ChangeNotifier {
   final List<PositionUpdate> _positions = [];
   final List<Lap> _laps = []; // For the lap counter
   List<LapMark> _lapTimeline = [];
+  Map<int, List<Lap>> _lapsByDriver = {}; // The same laps, per driver
+  List<Stint> _stints = [];
+  List<PitStop> _pitStops = [];
+  List<RaceControlMessage> _messages = [];
+  List<WeatherReading> _weather = [];
   DateTime _lastLapPoll = DateTime(2000);
   DateTime? _loadedUntil; // Replay: we have car data up to here
   DateTime? _liveCursor; // Live: the newest car data we have
@@ -71,9 +80,21 @@ class TrackerController extends ChangeNotifier {
   /// How long the session is scheduled to last.
   Duration get length => session.end.difference(session.start);
 
+  /// Data saver in a replay: place the cars from their lap times instead
+  /// of downloading their GPS positions (Chapter 43). Live always uses GPS,
+  /// because lap times only arrive once a lap is over.
+  bool get placesCarsByLaps => saveData && mode == TrackerMode.replay;
+
   /// Where every car is at [clock].
   Map<int, Offset> get carPositions {
     final result = <int, Offset>{};
+    if (placesCarsByLaps) {
+      for (final entry in _lapsByDriver.entries) {
+        final point = positionFromLaps(entry.value, trackOutline, clock);
+        if (point != null) result[entry.key] = point;
+      }
+      return result;
+    }
     for (final entry in _locations.entries) {
       if (isInGarageAt(entry.value, clock)) continue; // Not on track
       final point = positionAt(entry.value, clock);
@@ -105,6 +126,45 @@ class TrackerController extends ChangeNotifier {
   /// Each driver's best lap so far at [clock], in seconds. Empty in races.
   Map<int, double> get bestLaps =>
       showsLapTimes ? bestLapsAt(_laps, clock) : const {};
+
+  /// The tyre each car is on at [clock]: "SOFT", "MEDIUM", "HARD"...
+  Map<int, String> get tyres {
+    final result = <int, String>{};
+    for (final number in drivers.keys) {
+      final lap = driverLapAt(_lapsByDriver[number] ?? const [], clock);
+      final compound = compoundOn(_stints, number, lap ?? 1);
+      if (compound != null) result[number] = compound;
+    }
+    return result;
+  }
+
+  /// A short note for each car that has one: in the garage, in the pit
+  /// lane, or (in races) how many pit stops it has made.
+  Map<int, String> get carNotes {
+    final garage = inGarage;
+    final result = <int, String>{};
+    for (final number in drivers.keys) {
+      if (garage.contains(number)) {
+        result[number] = 'In the garage';
+      } else if (isInPitLane(_pitStops, number, clock)) {
+        result[number] = 'In the pit lane';
+      } else if (countsLaps) {
+        final stops = pitStopsBefore(_pitStops, number, clock);
+        if (stops > 0) result[number] = stops == 1 ? '1 stop' : '$stops stops';
+      }
+    }
+    return result;
+  }
+
+  /// The latest race control message, if it came in the last minute.
+  RaceControlMessage? get latestMessage => latestMessageAt(_messages, clock);
+
+  /// Qualifying only: which part is running, Q1, Q2 or Q3.
+  int? get qualifyingPhase =>
+      session.type == 'Qualifying' ? qualifyingPhaseAt(_messages, clock) : null;
+
+  /// The weather at the track at [clock].
+  WeatherReading? get weather => weatherAt(_weather, clock);
 
   /// Practice only: how long the session has left at [clock], like the
   /// clock on the TV. Null before the start and after the end.
@@ -144,13 +204,26 @@ class TrackerController extends ChangeNotifier {
       _setMessage(countsLaps ? 'Counting the laps' : 'Loading lap times');
       await _updateLaps();
 
+      _setMessage('Loading tyres, pit stops and flags');
+      await _loadExtras();
+
       _setMessage('Drawing the track');
       trackOutline = await _loadOutline();
 
-      _setMessage('Finding the cars');
-      if (mode == TrackerMode.replay) {
+      if (placesCarsByLaps) {
+        // Data saver: the lap times are all we need. No GPS downloads.
+        if (trackOutline.isEmpty) {
+          throw const ApiException(
+            'Data saver draws the cars along the track outline, and OpenF1 '
+            'has no outline for this session. Switch data saver off in '
+            'Settings to watch it with GPS.',
+          );
+        }
+      } else if (mode == TrackerMode.replay) {
+        _setMessage('Finding the cars');
         await _loadWindow(clock);
       } else {
+        _setMessage('Finding the cars');
         await _pollLive();
       }
 
@@ -261,6 +334,10 @@ class TrackerController extends ChangeNotifier {
     _locations.clear();
     _loadedUntil = null;
     clock = time;
+    if (placesCarsByLaps) {
+      _notify(); // Nothing to download: the lap times cover every moment
+      return;
+    }
     message = 'Finding the cars';
     _notify();
     await _loadWindow(time);
@@ -296,6 +373,7 @@ class TrackerController extends ChangeNotifier {
 
   /// Replay: download the next minute of data before we run out.
   void _loadMoreIfNeeded() {
+    if (placesCarsByLaps) return; // Data saver never downloads GPS
     if (_fetching || DateTime.now().isBefore(_retryAfter)) return;
 
     final loadedUntil = _loadedUntil;
@@ -373,7 +451,10 @@ class TrackerController extends ChangeNotifier {
 
       final lapsDue =
           DateTime.now().difference(_lastLapPoll) >= AppConfig.lapPollEvery;
-      if (lapsDue) await _updateLaps();
+      if (lapsDue) {
+        await _updateLaps();
+        await _loadExtras();
+      }
       message = null;
     } on ApiException catch (e) {
       message = e.message;
@@ -397,6 +478,7 @@ class TrackerController extends ChangeNotifier {
       if (newLaps.isEmpty) return;
       _laps.addAll(newLaps);
       _lapTimeline = buildLapTimeline(_laps);
+      _lapsByDriver = lapsByDriver(_laps);
       if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
         totalLaps = _lapTimeline.last.lap; // The last lap anyone started
       }
@@ -421,8 +503,32 @@ class TrackerController extends ChangeNotifier {
       final fresh = {for (final lap in laps) keyOf(lap)};
       _laps.removeWhere((lap) => fresh.contains(keyOf(lap)));
       _laps.addAll(laps);
+      _lapsByDriver = lapsByDriver(_laps);
     } on ApiException {
       // No lap times this time. The map and the order still work.
+    }
+  }
+
+  /// Tyres, pit stops, race control and weather. Small downloads, and the
+  /// tracker works without any of them, so each one fails quietly.
+  Future<void> _loadExtras() async {
+    final key = session.sessionKey;
+    _stints = await _quietly(() => _api.getStints(key), _stints);
+    _pitStops = await _quietly(() => _api.getPitStops(key), _pitStops);
+    _messages = await _quietly(() => _api.getRaceControl(key), _messages);
+    _weather = await _quietly(() => _api.getWeather(key), _weather);
+  }
+
+  /// Runs [download]. If it fails, keeps [fallback], what we had before.
+  /// <T> makes it work for a list of anything: stints, stops, messages.
+  Future<List<T>> _quietly<T>(
+    Future<List<T>> Function() download,
+    List<T> fallback,
+  ) async {
+    try {
+      return await download();
+    } on ApiException {
+      return fallback;
     }
   }
 

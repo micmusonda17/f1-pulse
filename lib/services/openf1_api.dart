@@ -214,6 +214,44 @@ class OpenF1Api {
         .toList();
   }
 
+  /// Every set of tyres each driver used in a session.
+  Future<List<Stint>> getStints(int sessionKey) async {
+    final rows = await _get('stints?session_key=$sessionKey');
+    return rows
+        .map((row) => Stint.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Every trip through the pit lane, oldest first.
+  Future<List<PitStop>> getPitStops(int sessionKey) async {
+    final rows = await _get('pit?session_key=$sessionKey');
+    final stops = rows
+        .map((row) => PitStop.fromJson(row as Map<String, dynamic>))
+        .toList();
+    stops.sort((a, b) => a.date.compareTo(b.date));
+    return stops;
+  }
+
+  /// Every message from race control, oldest first.
+  Future<List<RaceControlMessage>> getRaceControl(int sessionKey) async {
+    final rows = await _get('race_control?session_key=$sessionKey');
+    final messages = rows
+        .map((row) => RaceControlMessage.fromJson(row as Map<String, dynamic>))
+        .toList();
+    messages.sort((a, b) => a.date.compareTo(b.date));
+    return messages;
+  }
+
+  /// The weather through a session, oldest first.
+  Future<List<WeatherReading>> getWeather(int sessionKey) async {
+    final rows = await _get('weather?session_key=$sessionKey');
+    final readings = rows
+        .map((row) => WeatherReading.fromJson(row as Map<String, dynamic>))
+        .toList();
+    readings.sort((a, b) => a.date.compareTo(b.date));
+    return readings;
+  }
+
   /// Every position change in a session, or only those after [after].
   Future<List<PositionUpdate>> getPositions(
     int sessionKey, {

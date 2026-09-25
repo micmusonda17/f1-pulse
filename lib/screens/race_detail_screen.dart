@@ -12,6 +12,7 @@ import '../utils/formatting.dart';
 import '../widgets/circuit_outline.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import '../widgets/spoiler_gate.dart';
 import 'prediction_screen.dart';
 import 'tracker_screen.dart';
 
@@ -153,7 +154,11 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
               ),
             ),
             const SectionHeader('Results'),
-            _buildResults(),
+            SpoilerGate(
+              topic: 'results-${race.season}-${race.round}',
+              what: 'The results',
+              child: _buildResults(),
+            ),
           ],
         ],
       ),

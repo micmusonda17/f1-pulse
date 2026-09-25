@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_exception.dart';
+import '../services/app_preferences.dart';
 import '../services/openf1_api.dart';
+import '../services/race_alerts.dart';
 import '../services/settings_store.dart';
 
 /// Where you enter an OpenF1 login for live data, plus the credits.
@@ -101,6 +103,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _show('Login removed.');
   }
 
+  /// Switches reminders or replay alerts on or off. Switching one on asks
+  /// iOS for permission first, and stays off if you said no.
+  Future<void> _setAlert(bool on, Future<void> Function(bool) save) async {
+    if (on && !await RaceAlerts.instance.askPermission()) {
+      if (!mounted) return;
+      _show('Allow notifications for Pitbeat in the iPhone Settings app.');
+      return;
+    }
+    await save(on);
+    await RaceAlerts.instance.refresh();
+  }
+
   void _show(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
@@ -137,6 +151,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: const Icon(Icons.replay),
               label: const Text('Show the welcome pages again'),
             ),
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
+          Text('Race weekends', style: theme.textTheme.titleMedium),
+          // ListenableBuilder redraws the switches whenever one changes.
+          ListenableBuilder(
+            listenable: AppPreferences.instance,
+            builder: (context, _) => _buildSwitches(),
           ),
           const SizedBox(height: 16),
           const Divider(),
@@ -192,11 +215,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'Pitbeat is a personal learning project. It is not connected '
             'to Formula 1 or any team.\n\n'
             'Calendar, standings and results: Jolpica F1 API.\n'
-            'Car positions: OpenF1.\n'
+            'Car positions, laps, tyres, pit stops, race control and '
+            'weather: OpenF1.\n'
             'Circuit maps: the f1-circuits project by Tomislav Bacinger.\n'
             'News: the RSS feeds of each website.',
           ),
           const SizedBox(height: 8),
+          // The Licences page button
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(
@@ -210,6 +235,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// The four switches: two alerts, data saver and spoiler-free mode.
+  Widget _buildSwitches() {
+    final preferences = AppPreferences.instance;
+    return Column(
+      children: [
+        if (RaceAlerts.supported) ...[
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Session reminders'),
+            subtitle: const Text(
+              '15 minutes before every practice, qualifying and race.',
+            ),
+            value: preferences.sessionReminders,
+            onChanged: (on) =>
+                _setAlert(on, preferences.setSessionReminders),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Replay alerts'),
+            subtitle: const Text(
+              'When a session can be watched on the tracker, about 30 '
+              'minutes after it ends. Tap the alert to open the replay.',
+            ),
+            value: preferences.replayAlerts,
+            onChanged: (on) => _setAlert(on, preferences.setReplayAlerts),
+          ),
+        ] else
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.notifications_off_outlined),
+            title: Text('Reminders and replay alerts are in the iPhone app.'),
+          ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Data saver'),
+          subtitle: const Text(
+            'No driver or news photos, saved results reused for 30 minutes, '
+            'and replays drawn from lap times instead of GPS, which needs '
+            'only a small fraction of the data.',
+          ),
+          value: preferences.dataSaver,
+          onChanged: preferences.setDataSaver,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Spoiler-free mode'),
+          subtitle: const Text(
+            'Hides results, standings, news and predictions until you tap '
+            'Show. Handy if you watch the race later.',
+          ),
+          value: preferences.spoilerFree,
+          onChanged: preferences.setSpoilerFree,
+        ),
+      ],
     );
   }
 }

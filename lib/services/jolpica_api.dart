@@ -8,6 +8,17 @@ import '../models/race_result.dart';
 import '../models/standing.dart';
 import 'api_exception.dart';
 
+/// Somewhere to keep copies of Jolpica's answers on the phone.
+///
+/// An abstract class only lists what something can do, like a Python
+/// base class full of `raise NotImplementedError`. PhoneCache (in
+/// lib/services/phone_cache.dart) does the actual saving. Keeping this file
+/// free of Flutter means `dart run bin/try_api.dart` still works.
+abstract class ResponseCache {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+}
+
 /// Talks to the Jolpica F1 API: the calendar, standings and results.
 ///
 /// Free, no key needed. Limits: 4 requests a second and 500 an hour,
@@ -17,6 +28,14 @@ class JolpicaApi {
   JolpicaApi({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+
+  /// Where answers are saved. main() plugs in PhoneCache. In tests and in
+  /// bin/try_api.dart it stays null, and nothing is saved.
+  static ResponseCache? cache;
+
+  /// Data saver: reuse a saved answer younger than this instead of
+  /// downloading it again. Zero (always download) unless data saver is on.
+  static Duration reuseCopiesFor = Duration.zero;
 
   // One queue for every JolpicaApi in the app (static means shared by all
   // of them), so together they stay under 4 requests a second. The same
@@ -30,9 +49,55 @@ class JolpicaApi {
     return mySlot;
   }
 
+  /// Gets one answer: a recent saved copy in data saver mode, otherwise a
+  /// fresh download, and the saved copy if the download fails (no signal,
+  /// or the server is down). A week-old calendar beats an error screen.
+  Future<Map<String, dynamic>> _get(String path) async {
+    final saved = await _readCopy(path);
+    if (saved != null &&
+        DateTime.now().difference(saved.savedAt) < reuseCopiesFor) {
+      return saved.data;
+    }
+    try {
+      final data = await _fetch(path);
+      await _writeCopy(path, data);
+      return data;
+    } on ApiException {
+      if (saved != null) return saved.data;
+      rethrow;
+    }
+  }
+
+  Future<_Copy?> _readCopy(String path) async {
+    final store = cache;
+    if (store == null) return null;
+    try {
+      final text = await store.read('jolpica:$path');
+      if (text == null) return null;
+      final json = jsonDecode(text) as Map<String, dynamic>;
+      return _Copy(
+        DateTime.parse(json['savedAt'] as String),
+        json['data'] as Map<String, dynamic>,
+      );
+    } catch (_) {
+      return null; // A damaged copy is no copy
+    }
+  }
+
+  Future<void> _writeCopy(String path, Map<String, dynamic> data) async {
+    final store = cache;
+    if (store == null) return;
+    try {
+      final saved = {'savedAt': DateTime.now().toIso8601String(), 'data': data};
+      await store.write('jolpica:$path', jsonEncode(saved));
+    } catch (_) {
+      // Could not save a copy. The app still has the fresh answer.
+    }
+  }
+
   /// Every Jolpica answer is wrapped in {"MRData": {...}}.
   /// This makes the request, checks it worked, and unwraps it.
-  Future<Map<String, dynamic>> _get(String path) async {
+  Future<Map<String, dynamic>> _fetch(String path) async {
     final url = Uri.parse('${AppConfig.jolpicaBaseUrl}/$path');
     await _waitForSlot(); // Wait for our turn
 
@@ -141,4 +206,12 @@ class JolpicaApi {
         .map((row) => QualifyingResult.fromJson(row as Map<String, dynamic>))
         .toList();
   }
+}
+
+/// A saved answer and when it was saved.
+class _Copy {
+  const _Copy(this.savedAt, this.data);
+
+  final DateTime savedAt;
+  final Map<String, dynamic> data;
 }
