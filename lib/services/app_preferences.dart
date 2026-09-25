@@ -18,7 +18,10 @@ class AppPreferences extends ChangeNotifier {
   static const String _remindersKey = 'session_reminders';
   static const String _replayAlertsKey = 'replay_alerts';
 
-  final SettingsStore _store = SettingsStore();
+  // late: only made the first time it is used (loading or saving). Tests
+  // that just read a switch never touch the phone's storage, which does
+  // not exist in a test.
+  late final SettingsStore _store = SettingsStore();
 
   bool dataSaver = false;
   bool spoilerFree = false;
