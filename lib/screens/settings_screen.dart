@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../services/api_exception.dart';
 import '../services/app_preferences.dart';
 import '../services/openf1_api.dart';
+import '../services/profile_store.dart';
 import '../services/race_alerts.dart';
 import '../services/settings_store.dart';
+import 'profiles_screen.dart';
 
 /// Where you enter an OpenF1 login for live data, plus the credits.
 class SettingsScreen extends StatefulWidget {
@@ -22,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _password = TextEditingController();
   bool _saving = false;
   bool _hasLogin = false;
+  bool _bettingStats = false; // This profile's choice (Chapter 49)
 
   @override
   void initState() {
@@ -38,34 +41,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _load() async {
-    final name = await _settings.getName();
     final username = await _settings.getOpenF1Username();
     final password = await _settings.getOpenF1Password();
+    final betting = await _settings.getBettingStats();
     if (!mounted) return;
     setState(() {
-      _name.text = name ?? '';
+      _name.text = ProfileStore.instance.current?.name ?? '';
       _username.text = username ?? '';
       _password.text = password ?? '';
       _hasLogin = (username ?? '').isNotEmpty;
+      _bettingStats = betting;
     });
   }
 
+  /// Renames the signed-in profile.
   Future<void> _saveName() async {
     final name = _name.text.trim();
-    if (name.isEmpty) {
+    final profile = ProfileStore.instance.current;
+    if (name.isEmpty || profile == null) {
       _show('Type a name first.');
       return;
     }
-    await _settings.setName(name);
+    await ProfileStore.instance.rename(profile.id, name);
     if (!mounted) return;
     FocusScope.of(context).unfocus(); // Hides the keyboard
     _show('Saved. Hi $name!');
   }
 
-  Future<void> _showWelcomeAgain() async {
-    await _settings.setWelcomeDone(false);
-    if (!mounted) return;
-    _show('The welcome pages will show next time Pitbeat starts.');
+  /// Back to "Who's watching?". Settings closes first, so the picker
+  /// is what you see.
+  Future<void> _signOut() async {
+    Navigator.pop(context);
+    await ProfileStore.instance.signOut();
+  }
+
+  /// Deletes the signed-in profile, after asking.
+  Future<void> _deleteProfile() async {
+    final profile = ProfileStore.instance.current;
+    if (profile == null) return;
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete ${profile.name}?'),
+        content: const Text(
+          'Their name, favourites and fantasy team are removed from this '
+          'phone. Everyone else is kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !mounted) return;
+    Navigator.pop(context);
+    await ProfileStore.instance.delete(profile.id);
+  }
+
+  /// Betting stats are for adults only, so switching them on asks first.
+  Future<void> _setBettingStats(bool on) async {
+    if (on) {
+      final adult = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Are you 18 or older?'),
+          content: const Text(
+            'Betting stats show fair odds and form for each driver. '
+            'Gambling is for adults only. Pitbeat never takes bets and is '
+            'not linked to any bookmaker.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('No'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Yes, I am 18+'),
+            ),
+          ],
+        ),
+      );
+      if (adult != true) return;
+    }
+    await _settings.setBettingStats(on);
+    if (mounted) setState(() => _bettingStats = on);
   }
 
   Future<void> _save() async {
@@ -127,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('You', style: theme.textTheme.titleMedium),
+          Text('Your profile', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
           TextField(
             controller: _name,
@@ -144,13 +210,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _showWelcomeAgain,
-              icon: const Icon(Icons.replay),
-              label: const Text('Show the welcome pages again'),
+          // Wrap: the buttons go onto a second line if the phone is narrow.
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: () => showProfileSwitcher(context),
+                icon: const Icon(Icons.switch_account),
+                label: const Text('Switch profile'),
+              ),
+              TextButton.icon(
+                onPressed: _signOut,
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign out'),
+              ),
+              TextButton.icon(
+                onPressed: _deleteProfile,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Delete profile'),
+              ),
+            ],
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Betting stats (18+)'),
+            subtitle: const Text(
+              "Fair odds from Pitbeat's predictions, and each driver's form. "
+              'Only for this profile.',
             ),
+            value: _bettingStats,
+            onChanged: _setBettingStats,
           ),
           const SizedBox(height: 16),
           const Divider(),

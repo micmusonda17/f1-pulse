@@ -281,4 +281,99 @@ void main() {
       expect(positionFromLaps(noTime, outline, at(5)), const Offset(10, 0));
     });
   });
+
+  group('qualifying, tyre age and sector times', () {
+    test('tyreAgeOn counts the laps from before the stint too', () {
+      const stints = [
+        Stint(
+          driverNumber: 1,
+          lapStart: 1,
+          lapEnd: 8,
+          compound: 'SOFT',
+          tyreAgeAtStart: 3, // A used set: 3 laps already
+        ),
+        Stint(driverNumber: 1, lapStart: 9, lapEnd: null, compound: 'SOFT'),
+      ];
+      expect(tyreAgeOn(stints, 1, 1), 3);
+      expect(tyreAgeOn(stints, 1, 5), 7);
+      expect(tyreAgeOn(stints, 1, 9), 0); // A new set
+      expect(tyreAgeOn(stints, 44, 5), isNull); // No stints for car 44
+    });
+
+    test('lapsCompleted counts laps with a time that had ended', () {
+      final driverLaps = [
+        Lap(driverNumber: 1, lapNumber: 1, start: at(0), duration: 90.0),
+        Lap(driverNumber: 1, lapNumber: 2, start: at(90), duration: 90.0),
+        // Into the pits: no time, so it does not count.
+        Lap(driverNumber: 1, lapNumber: 3, start: at(180), duration: null),
+      ];
+      expect(lapsCompleted(driverLaps, at(60)), 0);
+      expect(lapsCompleted(driverLaps, at(90)), 1); // Ended exactly now
+      expect(lapsCompleted(driverLaps, at(500)), 2);
+    });
+
+    test('knockedOutAt works out who is out from the running order', () {
+      final order22 = [for (var car = 1; car <= 22; car++) car]; // Car 1 P1
+      expect(knockedOutAt(order22, 1, 22), isEmpty); // Q1: nobody out yet
+
+      // Q2 with 22 cars: P17 to P22 went out in Q1.
+      final duringQ2 = knockedOutAt(order22, 2, 22);
+      expect(duringQ2.keys.toList(), [17, 18, 19, 20, 21, 22]);
+      expect(duringQ2.values.toSet(), {1});
+
+      // Q3: P11 to P16 went out in Q2.
+      final duringQ3 = knockedOutAt(order22, 3, 22);
+      expect(duringQ3[11], 2);
+      expect(duringQ3[16], 2);
+      expect(duringQ3[17], 1);
+      expect(duringQ3.containsKey(10), isFalse);
+
+      // 20 cars: 5 out in each part.
+      final order20 = [for (var car = 1; car <= 20; car++) car];
+      expect(knockedOutAt(order20, 2, 20).keys.toList(), [16, 17, 18, 19, 20]);
+    });
+
+    test('bestsOf finds the fastest sectors and the fastest lap', () {
+      final laps = [
+        Lap(
+          driverNumber: 1,
+          lapNumber: 1,
+          start: at(0),
+          duration: 90.0,
+          sectors: [30.0, 31.0, 29.0],
+        ),
+        Lap(
+          driverNumber: 44,
+          lapNumber: 1,
+          start: at(1),
+          duration: 89.9,
+          sectors: [30.2, 30.5, 29.2],
+        ),
+        // No lap time, but its first sector still counts.
+        Lap(
+          driverNumber: 16,
+          lapNumber: 1,
+          start: at(2),
+          duration: null,
+          sectors: [29.8, null, null],
+        ),
+      ];
+      final bests = bestsOf(laps);
+      expect(bests.sectors, [29.8, 30.5, 29.0]);
+      expect(bests.lap, 89.9);
+      expect(bestsOf(const <Lap>[]).lap, isNull);
+    });
+
+    test('fastestEachLap: who was quickest on every lap', () {
+      final laps = [
+        Lap(driverNumber: 1, lapNumber: 1, start: at(0), duration: 91.0),
+        Lap(driverNumber: 44, lapNumber: 1, start: at(1), duration: 90.5),
+        Lap(driverNumber: 1, lapNumber: 2, start: at(91), duration: 89.0),
+        Lap(driverNumber: 44, lapNumber: 2, start: at(92), duration: null),
+      ];
+      final fastest = fastestEachLap(laps);
+      expect(fastest[1]?.driverNumber, 44);
+      expect(fastest[2]?.driverNumber, 1);
+    });
+  });
 }

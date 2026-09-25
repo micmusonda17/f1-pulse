@@ -5,11 +5,13 @@ import '../models/race.dart';
 import '../predictions/prediction_service.dart';
 import '../predictions/predictor.dart';
 import '../services/driver_directory.dart';
+import '../services/settings_store.dart';
 import '../theme.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
 import '../widgets/spoiler_gate.dart';
+import 'form_guide_screen.dart';
 
 /// Opens the full prediction for one race. The Future finishes when you
 /// come back.
@@ -33,12 +35,19 @@ class PredictionScreen extends StatefulWidget {
 class _PredictionScreenState extends State<PredictionScreen> {
   late Future<RacePrediction> _prediction;
   Map<String, DriverInfo> _directory = {}; // Photos and colours, by code
+  bool _bettingStats = false; // This profile switched them on (18+)
 
   @override
   void initState() {
     super.initState();
     _prediction = PredictionService.instance.predict(widget.race);
     _loadDirectory();
+    _loadBettingStats();
+  }
+
+  Future<void> _loadBettingStats() async {
+    final on = await SettingsStore().getBettingStats();
+    if (mounted) setState(() => _bettingStats = on);
   }
 
   Future<void> _loadDirectory() async {
@@ -58,7 +67,22 @@ class _PredictionScreenState extends State<PredictionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Who will win?')),
+      appBar: AppBar(
+        title: const Text('Who will win?'),
+        actions: [
+          if (_bettingStats)
+            TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FormGuideScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.query_stats),
+              label: const Text('Form guide'),
+            ),
+        ],
+      ),
       body: FutureBuilder<RacePrediction>(
         future: _prediction,
         builder: (context, snapshot) {
@@ -120,7 +144,9 @@ class _PredictionScreenState extends State<PredictionScreen> {
             rank: i + 1,
             prediction: topTen[i],
             info: _directory[topTen[i].driver.code],
+            showOdds: _bettingStats,
           ),
+        if (_bettingStats) const BettingNote(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           child: Text(
@@ -313,12 +339,14 @@ class ChanceRow extends StatelessWidget {
     required this.prediction,
     required this.info,
     this.showReasons = true,
+    this.showOdds = false,
   });
 
   final int rank;
   final WinPrediction prediction;
   final DriverInfo? info; // Photo and team colour, once they have loaded
   final bool showReasons;
+  final bool showOdds; // Betting stats: fair odds under the chance
 
   @override
   Widget build(BuildContext context) {
@@ -384,6 +412,13 @@ class ChanceRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 ChanceBar(value: prediction.chance, colour: colour),
+                if (showOdds)
+                  Text(
+                    formatOdds(prediction.chance),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: F1Colors.muted,
+                    ),
+                  ),
               ],
             ),
           ),

@@ -157,27 +157,39 @@ class PositionUpdate {
   }
 }
 
-/// One lap by one driver. We only need when it started and how long it took.
+/// One lap by one driver: when it started, how long it took, and its three
+/// sector times (Chapter 50).
 class Lap {
   const Lap({
     required this.driverNumber,
     required this.lapNumber,
     required this.start,
     required this.duration,
+    this.sectors = const [null, null, null],
+    this.isPitOutLap = false,
   });
 
   final int driverNumber;
   final int lapNumber;
   final DateTime? start;
   final double? duration; // seconds
+  final List<double?> sectors; // Sectors 1, 2 and 3, in seconds
+  final bool isPitOutLap; // The lap that started in the pit lane
 
   factory Lap.fromJson(Map<String, dynamic> json) {
     final start = json['date_start'] as String?;
+    double? seconds(String key) => (json[key] as num?)?.toDouble();
     return Lap(
       driverNumber: json['driver_number'] as int,
       lapNumber: json['lap_number'] as int,
       start: start == null ? null : DateTime.parse(start),
-      duration: (json['lap_duration'] as num?)?.toDouble(),
+      duration: seconds('lap_duration'),
+      sectors: [
+        seconds('duration_sector_1'),
+        seconds('duration_sector_2'),
+        seconds('duration_sector_3'),
+      ],
+      isPitOutLap: (json['is_pit_out_lap'] as bool?) ?? false,
     );
   }
 }
@@ -190,12 +202,14 @@ class Stint {
     required this.lapStart,
     required this.lapEnd,
     required this.compound,
+    this.tyreAgeAtStart = 0,
   });
 
   final int driverNumber;
   final int lapStart;
   final int? lapEnd;
   final String compound; // "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
+  final int tyreAgeAtStart; // Laps these tyres had done before this stint
 
   factory Stint.fromJson(Map<String, dynamic> json) {
     return Stint(
@@ -203,6 +217,7 @@ class Stint {
       lapStart: (json['lap_start'] as int?) ?? 1,
       lapEnd: json['lap_end'] as int?,
       compound: (json['compound'] as String?) ?? 'UNKNOWN',
+      tyreAgeAtStart: (json['tyre_age_at_start'] as int?) ?? 0,
     );
   }
 }
@@ -213,11 +228,15 @@ class PitStop {
     required this.driverNumber,
     required this.date,
     required this.laneSeconds,
+    this.lapNumber,
+    this.stopSeconds,
   });
 
   final int driverNumber;
   final DateTime date; // When the car came into the pit lane
   final double? laneSeconds; // Time from pit entry to pit exit
+  final int? lapNumber;
+  final double? stopSeconds; // Standing still: the crew's time (2024 on)
 
   factory PitStop.fromJson(Map<String, dynamic> json) {
     // lane_duration is the new name. Older data only has pit_duration.
@@ -226,6 +245,8 @@ class PitStop {
       driverNumber: json['driver_number'] as int,
       date: DateTime.parse(json['date'] as String),
       laneSeconds: (seconds as num?)?.toDouble(),
+      lapNumber: json['lap_number'] as int?,
+      stopSeconds: (json['stop_duration'] as num?)?.toDouble(),
     );
   }
 }
@@ -238,6 +259,7 @@ class RaceControlMessage {
     required this.message,
     this.flag,
     this.qualifyingPhase,
+    this.lapNumber,
   });
 
   final DateTime date;
@@ -245,6 +267,7 @@ class RaceControlMessage {
   final String message; // "SAFETY CAR DEPLOYED"
   final String? flag; // "YELLOW", "RED", "CHEQUERED"... Null if not a flag
   final int? qualifyingPhase; // 1, 2 or 3 in qualifying, otherwise null
+  final int? lapNumber; // The race's lap when it was sent
 
   factory RaceControlMessage.fromJson(Map<String, dynamic> json) {
     return RaceControlMessage(
@@ -253,6 +276,7 @@ class RaceControlMessage {
       message: (json['message'] as String?) ?? '',
       flag: json['flag'] as String?,
       qualifyingPhase: json['qualifying_phase'] as int?,
+      lapNumber: json['lap_number'] as int?,
     );
   }
 }

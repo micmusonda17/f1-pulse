@@ -196,6 +196,65 @@ class JolpicaApi {
         .toList();
   }
 
+  /// Every race result of a season, by round (Chapters 48 and 49).
+  Future<Map<int, List<RaceResult>>> getSeasonResults(int season) async {
+    final rows = await _seasonRows(season, 'results', 'Results');
+    return rows.map(
+      (round, list) => MapEntry(round, list.map(RaceResult.fromJson).toList()),
+    );
+  }
+
+  /// Every sprint result of a season, by round. Sprints have the same
+  /// layout as races, under "SprintResults".
+  Future<Map<int, List<RaceResult>>> getSeasonSprints(int season) async {
+    final rows = await _seasonRows(season, 'sprint', 'SprintResults');
+    return rows.map(
+      (round, list) => MapEntry(round, list.map(RaceResult.fromJson).toList()),
+    );
+  }
+
+  /// Every qualifying result of a season, by round.
+  Future<Map<int, List<QualifyingResult>>> getSeasonQualifying(
+    int season,
+  ) async {
+    final rows = await _seasonRows(season, 'qualifying', 'QualifyingResults');
+    return rows.map(
+      (round, list) =>
+          MapEntry(round, list.map(QualifyingResult.fromJson).toList()),
+    );
+  }
+
+  /// A whole season's rows under [key], grouped by round.
+  ///
+  /// Jolpica sends at most 100 rows at a time, and a season has over 400,
+  /// so we ask page by page: offset 0, 100, 200... until we have them all.
+  /// One race can be split across two pages, so rows are added to their
+  /// round rather than replacing it.
+  Future<Map<int, List<Map<String, dynamic>>>> _seasonRows(
+    int season,
+    String path,
+    String key,
+  ) async {
+    final byRound = <int, List<Map<String, dynamic>>>{};
+    var offset = 0;
+    while (true) {
+      final data = await _get('$season/$path.json?limit=100&offset=$offset');
+      final races = data['RaceTable']['Races'] as List<dynamic>;
+      var rowsOnPage = 0;
+      for (final race in races.cast<Map<String, dynamic>>()) {
+        final round = int.parse(race['round'] as String);
+        final rows = ((race[key] as List<dynamic>?) ?? const [])
+            .cast<Map<String, dynamic>>();
+        byRound.putIfAbsent(round, () => []).addAll(rows);
+        rowsOnPage += rows.length;
+      }
+      final total = int.tryParse('${data['total']}') ?? 0;
+      offset += 100;
+      if (rowsOnPage == 0 || offset >= total) break;
+    }
+    return byRound;
+  }
+
   /// The qualifying order for one race. Empty until qualifying is over.
   Future<List<QualifyingResult>> getQualifying(int season, int round) async {
     final data = await _get('$season/$round/qualifying.json?limit=100');

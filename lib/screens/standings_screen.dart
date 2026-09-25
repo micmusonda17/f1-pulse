@@ -10,8 +10,10 @@ import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
 import '../widgets/spoiler_gate.dart';
+import 'fantasy_screen.dart';
 
-/// The second tab: drivers' and constructors' championships.
+/// The second tab: drivers' and constructors' championships, and fantasy
+/// points (Chapter 48).
 class StandingsScreen extends StatelessWidget {
   const StandingsScreen({super.key});
 
@@ -20,19 +22,23 @@ class StandingsScreen extends StatelessWidget {
     // DefaultTabController links the TabBar at the top with the
     // TabBarView underneath, so tapping a tab shows the right page.
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Standings'),
           bottom: const TabBar(
-            tabs: [Tab(text: 'Drivers'), Tab(text: 'Teams')],
+            tabs: [
+              Tab(text: 'Drivers'),
+              Tab(text: 'Teams'),
+              Tab(text: 'Fantasy'),
+            ],
           ),
         ),
         body: const SpoilerGate(
           topic: 'standings',
           what: 'The standings',
           child: TabBarView(
-            children: [DriverStandingsTab(), TeamStandingsTab()],
+            children: [DriverStandingsTab(), TeamStandingsTab(), FantasyTab()],
           ),
         ),
       ),

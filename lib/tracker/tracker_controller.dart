@@ -138,20 +138,43 @@ class TrackerController extends ChangeNotifier {
     return result;
   }
 
-  /// A short note for each car that has one: in the garage, in the pit
-  /// lane, or (in races) how many pit stops it has made.
+  /// How many laps the tyres each car is on have done at [clock].
+  Map<int, int> get tyreAges {
+    final result = <int, int>{};
+    for (final number in drivers.keys) {
+      final lap = driverLapAt(_lapsByDriver[number] ?? const [], clock);
+      final age = tyreAgeOn(_stints, number, lap ?? 1);
+      if (age != null) result[number] = age;
+    }
+    return result;
+  }
+
+  /// A short note for each car that has one, like "Out in Q1  ·  6 laps"
+  /// or "In the pit lane  ·  1 stop".
   Map<int, String> get carNotes {
     final garage = inGarage;
+    final phase = qualifyingPhase;
+    final out = phase == null
+        ? const <int, int>{}
+        : knockedOutAt(runningOrder, phase, drivers.length);
     final result = <int, String>{};
     for (final number in drivers.keys) {
+      final notes = <String>[];
+      if (out[number] case final part?) notes.add('Out in Q$part');
       if (garage.contains(number)) {
-        result[number] = 'In the garage';
+        notes.add('In the garage');
       } else if (isInPitLane(_pitStops, number, clock)) {
-        result[number] = 'In the pit lane';
-      } else if (countsLaps) {
-        final stops = pitStopsBefore(_pitStops, number, clock);
-        if (stops > 0) result[number] = stops == 1 ? '1 stop' : '$stops stops';
+        notes.add('In the pit lane');
       }
+      if (countsLaps) {
+        final stops = pitStopsBefore(_pitStops, number, clock);
+        if (stops > 0) notes.add(stops == 1 ? '1 stop' : '$stops stops');
+      } else {
+        // Practice and qualifying: how many laps they have done so far.
+        final done = lapsCompleted(_lapsByDriver[number] ?? const [], clock);
+        if (done > 0) notes.add(done == 1 ? '1 lap' : '$done laps');
+      }
+      if (notes.isNotEmpty) result[number] = notes.join('  ·  ');
     }
     return result;
   }
@@ -520,7 +543,7 @@ class TrackerController extends ChangeNotifier {
   }
 
   /// Runs [download]. If it fails, keeps [fallback], what we had before.
-  /// <T> makes it work for a list of anything: stints, stops, messages.
+  /// `<T>` makes it work for a list of anything: stints, stops, messages.
   Future<List<T>> _quietly<T>(
     Future<List<T>> Function() download,
     List<T> fallback,

@@ -4,25 +4,28 @@ import '../models/openf1_models.dart';
 import '../models/standing.dart';
 import '../services/driver_directory.dart';
 import '../services/jolpica_api.dart';
-import '../services/settings_store.dart';
+import '../services/profile_store.dart';
 import '../theme.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
 
-/// The pages you see the very first time you open the app:
-/// your name, your driver, your team. Then the main app.
+/// The pages that make a new profile: your name, your driver, your team.
+/// You see them the first time you open the app, and whenever you tap
+/// "Add profile" (Chapter 46).
 class WelcomeScreen extends StatefulWidget {
-  const WelcomeScreen({super.key, required this.onFinished});
+  const WelcomeScreen({super.key, required this.onFinished, this.onCancel});
 
-  /// Called after the last page, so main.dart can show the tabs instead.
+  /// Called after the last page, once the new profile is signed in.
   final VoidCallback onFinished;
+
+  /// Adding a second profile: shows a close button that calls this.
+  final VoidCallback? onCancel;
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  final SettingsStore _settings = SettingsStore();
   final JolpicaApi _api = JolpicaApi();
   final PageController _pages = PageController();
   final TextEditingController _name = TextEditingController();
@@ -90,17 +93,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     );
   }
 
-  /// Saves everything, then hands over to the main app.
+  /// Makes the profile with everything you chose, signs it in, then
+  /// hands over to the main app.
   Future<void> _finish() async {
     setState(() => _saving = true);
     try {
-      await _settings.setName(_name.text.trim());
-      await _settings.setFavouriteDriver(_driverId);
-      await _settings.setFavouriteTeam(_team);
-      await _settings.setWelcomeDone(true);
+      await ProfileStore.instance.add(
+        name: _name.text,
+        favouriteDriver: _driverId,
+        favouriteTeam: _team,
+      );
     } catch (_) {
       // Saving failed. Carry on anyway: the worst that happens is that
-      // you see these pages again next time.
+      // you pick a profile, or see these pages, again next time.
     }
     widget.onFinished();
   }
@@ -113,7 +118,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(21, 12, 21, 0),
-              child: StepBars(current: _page),
+              child: Row(
+                children: [
+                  Expanded(child: StepBars(current: _page)),
+                  // Only when adding another profile: a way back out.
+                  if (widget.onCancel case final cancel?)
+                    IconButton(
+                      onPressed: cancel,
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancel',
+                    ),
+                ],
+              ),
             ),
             Expanded(
               child: PageView(

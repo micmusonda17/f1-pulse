@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'screens/calendar_screen.dart';
 import 'screens/news_screen.dart';
+import 'screens/profiles_screen.dart';
 import 'screens/standings_screen.dart';
 import 'screens/tracker_hub_screen.dart';
 import 'screens/tracker_screen.dart';
@@ -13,8 +14,8 @@ import 'services/app_preferences.dart';
 import 'services/jolpica_api.dart';
 import 'services/openf1_api.dart';
 import 'services/phone_cache.dart';
+import 'services/profile_store.dart';
 import 'services/race_alerts.dart';
-import 'services/settings_store.dart';
 import 'theme.dart';
 import 'tracker/tracker_controller.dart';
 
@@ -79,8 +80,9 @@ class PitbeatApp extends StatelessWidget {
   }
 }
 
-/// Decides the first screen: the welcome pages the very first time you
-/// open the app, and straight to the tabs every time after that.
+/// Decides the first screen: the welcome pages when there are no profiles
+/// yet, "Who's watching?" when nobody is signed in, and the tabs otherwise.
+/// It listens to ProfileStore, so signing in or out switches by itself.
 class StartGate extends StatefulWidget {
   const StartGate({super.key});
 
@@ -89,50 +91,57 @@ class StartGate extends StatefulWidget {
 }
 
 class _StartGateState extends State<StartGate> {
-  final SettingsStore _settings = SettingsStore();
-  bool? _welcomeDone; // null while we are still checking
+  final ProfileStore _profiles = ProfileStore.instance;
+  bool _ready = false; // False while we read what is saved on the phone
 
   @override
   void initState() {
     super.initState();
-    _check();
+    _start();
   }
 
-  Future<void> _check() async {
-    var done = false;
-    try {
-      done = await _settings.isWelcomeDone();
-    } catch (_) {
-      // Could not read the settings: show the welcome pages to be safe.
-    }
-    // The switches from Settings, before any screen needs them.
+  Future<void> _start() async {
+    // Who uses this phone, and the switches from Settings, before any
+    // screen needs them.
+    await _profiles.load();
     await AppPreferences.instance.load();
     await RaceAlerts.instance.init(onTap: openReplayFromAlert);
     if (!mounted) return;
-    setState(() => _welcomeDone = done);
+    setState(() => _ready = true);
 
     // Opened by tapping a "replay is ready" alert? Go straight to it.
     final payload = await RaceAlerts.instance.launchPayload();
-    if (done && payload != null) openReplayFromAlert(payload);
+    if (_profiles.current != null && payload != null) {
+      openReplayFromAlert(payload);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final done = _welcomeDone;
-    final Widget screen;
-    if (done == null) {
-      screen = const Scaffold(); // A blink of plain background while we check
-    } else if (!done) {
-      screen = WelcomeScreen(
-        onFinished: () => setState(() => _welcomeDone = true),
-      );
-    } else {
-      screen = const HomeShell();
-    }
-    // Fades from one screen to the next instead of jumping.
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 400),
-      child: screen,
+    if (!_ready) return const Scaffold(); // A blink of plain background
+
+    return ListenableBuilder(
+      listenable: _profiles,
+      builder: (context, _) {
+        final Widget screen;
+        final current = _profiles.current;
+        if (_profiles.profiles.isEmpty) {
+          // Nothing to do when it finishes: the new profile is signed in,
+          // and this builder runs again by itself.
+          screen = WelcomeScreen(onFinished: () {});
+        } else if (current == null) {
+          screen = const ProfilePickerScreen();
+        } else {
+          // A new key for every profile, so switching builds fresh tabs
+          // with the new person's favourites.
+          screen = HomeShell(key: ValueKey(current.id));
+        }
+        // Fades from one screen to the next instead of jumping.
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          child: screen,
+        );
+      },
     );
   }
 }

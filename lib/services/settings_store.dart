@@ -9,49 +9,68 @@ import 'openf1_api.dart';
 class SettingsStore {
   final SharedPreferencesAsync _prefs = SharedPreferencesAsync();
 
+  /// The signed-in profile's id, set by ProfileStore. Everything personal
+  /// (favourites, fantasy team, betting stats) is saved under a key that
+  /// ends in it, so everyone on the phone keeps their own.
+  static String? profileId;
+
   static const String _favouriteKey = 'favourite_driver';
   static const String _teamKey = 'favourite_team';
-  static const String _nameKey = 'user_name';
-  static const String _welcomeDoneKey = 'welcome_done';
+  static const String _fantasyDriversKey = 'fantasy_drivers';
+  static const String _fantasyTeamsKey = 'fantasy_teams';
+  static const String _bettingKey = 'betting_stats';
   static const String _usernameKey = 'openf1_username';
   static const String _passwordKey = 'openf1_password';
 
-  /// True once the welcome pages have been finished (or skipped).
-  Future<bool> isWelcomeDone() async {
-    return (await _prefs.getBool(_welcomeDoneKey)) ?? false;
+  /// "favourite_driver" becomes "favourite_driver_p1727254...".
+  String _personal(String key) {
+    final id = profileId;
+    return id == null ? key : '${key}_$id';
   }
 
-  Future<void> setWelcomeDone(bool done) async {
-    await _prefs.setBool(_welcomeDoneKey, done);
-  }
-
-  /// The name typed on the welcome page, like "Michael".
-  Future<String?> getName() => _prefs.getString(_nameKey);
-
-  Future<void> setName(String name) async {
-    await _prefs.setString(_nameKey, name);
+  /// Saves [value], or removes the key when [value] is null.
+  Future<void> _setOrRemove(String key, String? value) async {
+    if (value == null) {
+      await _prefs.remove(key);
+    } else {
+      await _prefs.setString(key, value);
+    }
   }
 
   /// Your favourite team, as Jolpica names it, like "Ferrari".
-  Future<String?> getFavouriteTeam() => _prefs.getString(_teamKey);
+  Future<String?> getFavouriteTeam() => _prefs.getString(_personal(_teamKey));
 
-  Future<void> setFavouriteTeam(String? team) async {
-    if (team == null) {
-      await _prefs.remove(_teamKey);
-    } else {
-      await _prefs.setString(_teamKey, team);
-    }
-  }
+  Future<void> setFavouriteTeam(String? team) =>
+      _setOrRemove(_personal(_teamKey), team);
 
   /// The driverId of your favourite driver, like "antonelli".
-  Future<String?> getFavouriteDriver() => _prefs.getString(_favouriteKey);
+  Future<String?> getFavouriteDriver() =>
+      _prefs.getString(_personal(_favouriteKey));
 
-  Future<void> setFavouriteDriver(String? driverId) async {
-    if (driverId == null) {
-      await _prefs.remove(_favouriteKey);
-    } else {
-      await _prefs.setString(_favouriteKey, driverId);
-    }
+  Future<void> setFavouriteDriver(String? driverId) =>
+      _setOrRemove(_personal(_favouriteKey), driverId);
+
+  /// Your fantasy team: driverIds and team names (Chapter 48).
+  Future<List<String>> getFantasyDrivers() async =>
+      _split(await _prefs.getString(_personal(_fantasyDriversKey)));
+
+  Future<List<String>> getFantasyTeams() async =>
+      _split(await _prefs.getString(_personal(_fantasyTeamsKey)));
+
+  Future<void> setFantasyTeam(List<String> drivers, List<String> teams) async {
+    await _prefs.setString(_personal(_fantasyDriversKey), drivers.join('|'));
+    await _prefs.setString(_personal(_fantasyTeamsKey), teams.join('|'));
+  }
+
+  List<String> _split(String? text) =>
+      text == null || text.isEmpty ? [] : text.split('|');
+
+  /// Betting stats (Chapter 49), off until this profile says it is 18+.
+  Future<bool> getBettingStats() async =>
+      (await _prefs.getBool(_personal(_bettingKey))) ?? false;
+
+  Future<void> setBettingStats(bool on) async {
+    await _prefs.setBool(_personal(_bettingKey), on);
   }
 
   /// An on or off setting, like data saver. Off until it is switched on.

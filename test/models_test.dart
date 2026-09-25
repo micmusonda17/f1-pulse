@@ -301,4 +301,61 @@ void main() {
       expect(colourFromHex('nope'), Colors.grey);
     });
   });
+
+  group('sector times, tyre age, fantasy details', () {
+    test('a lap has three sector times', () {
+      final lap = Lap.fromJson(decode(
+        '{"driver_number": 1, "lap_number": 7, '
+        '"date_start": "2024-09-01T13:15:00+00:00", "lap_duration": 81.5, '
+        '"duration_sector_1": 26.1, "duration_sector_2": 27.3, '
+        '"duration_sector_3": null, "is_pit_out_lap": true}',
+      ));
+      expect(lap.sectors, [26.1, 27.3, null]);
+      expect(lap.isPitOutLap, isTrue);
+    });
+
+    test('stints, pit stops and messages carry the new fields', () {
+      final stint = Stint.fromJson(decode(
+        '{"driver_number": 16, "lap_start": 21, "lap_end": null, '
+        '"compound": "HARD", "tyre_age_at_start": 2}',
+      ));
+      expect(stint.tyreAgeAtStart, 2);
+
+      final stop = PitStop.fromJson(decode(
+        '{"driver_number": 16, "date": "2025-10-26T20:46:37+00:00", '
+        '"lane_duration": 22.2, "stop_duration": 2.4, "lap_number": 20}',
+      ));
+      expect(stop.stopSeconds, 2.4);
+      expect(stop.lapNumber, 20);
+
+      final message = RaceControlMessage.fromJson(decode(
+        '{"date": "2025-10-26T20:40:00+00:00", "category": "SafetyCar", '
+        '"message": "SAFETY CAR DEPLOYED", "lap_number": 18}',
+      ));
+      expect(message.lapNumber, 18);
+    });
+
+    test('a retirement is not classified, and the fastest lap is kept', () {
+      expect(RaceResult.fromJson(decode(retiredJson)).classified, isFalse);
+      final winner = RaceResult.fromJson(decode(winnerJson));
+      expect(winner.classified, isTrue);
+      expect(winner.fastestLapRank, isNull); // No FastestLap in this sample
+      final fastest = decode(winnerJson)
+        ..['FastestLap'] = {'rank': '1', 'lap': '44'};
+      expect(RaceResult.fromJson(fastest).fastestLapRank, 1);
+    });
+
+    test('qualifying knows how far each driver got', () {
+      final pole = QualifyingResult.fromJson(decode(qualifyingJson));
+      expect(pole.setTime, isTrue);
+      expect(pole.reachedQ2, isTrue);
+      expect(pole.reachedQ3, isTrue);
+      final outInQ1 = decode(qualifyingJson)
+        ..remove('Q2')
+        ..remove('Q3');
+      final result = QualifyingResult.fromJson(outInQ1);
+      expect(result.reachedQ2, isFalse);
+      expect(result.reachedQ3, isFalse);
+    });
+  });
 }

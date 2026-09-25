@@ -183,16 +183,20 @@ int? driverLapAt(List<Lap> driverLaps, DateTime time) {
   return lap;
 }
 
-/// The tyre [driverNumber] is on during [lap]: the compound of their
-/// latest stint that had started by then.
-String? compoundOn(List<Stint> stints, int driverNumber, int lap) {
+/// The set of tyres [driverNumber] is on during [lap]: their latest stint
+/// that had started by then.
+Stint? stintOn(List<Stint> stints, int driverNumber, int lap) {
   Stint? current;
   for (final stint in stints) {
     if (stint.driverNumber != driverNumber || stint.lapStart > lap) continue;
     if (current == null || stint.lapStart > current.lapStart) current = stint;
   }
-  return current?.compound;
+  return current;
 }
+
+/// The compound [driverNumber] is on during [lap]: "SOFT", "MEDIUM"...
+String? compoundOn(List<Stint> stints, int driverNumber, int lap) =>
+    stintOn(stints, driverNumber, lap)?.compound;
 
 /// True while [driverNumber] is in the pit lane at [time]. Stops without a
 /// time are counted as the usual 25 seconds or so.
@@ -307,4 +311,90 @@ Offset? positionFromLaps(List<Lap> laps, List<Offset> outline, DateTime time) {
     );
   }
   return null;
+}
+
+// ----------------------------------------------------------------------
+// Qualifying, tyre age and sector times (Chapter 50)
+// ----------------------------------------------------------------------
+
+/// How many laps the tyres [driverNumber] is on have done by [lap]: the
+/// laps they had before this stint (from an earlier session) plus the laps
+/// since. The TV shows the same number next to the tyre.
+int? tyreAgeOn(List<Stint> stints, int driverNumber, int lap) {
+  final stint = stintOn(stints, driverNumber, lap);
+  if (stint == null) return null;
+  return stint.tyreAgeAtStart + (lap - stint.lapStart);
+}
+
+/// How many laps one driver had finished by [time].
+int lapsCompleted(List<Lap> driverLaps, DateTime time) {
+  var count = 0;
+  for (final lap in driverLaps) {
+    final start = lap.start;
+    final seconds = lap.duration;
+    if (start == null || seconds == null) continue;
+    final end = start.add(Duration(milliseconds: (seconds * 1000).round()));
+    if (!end.isAfter(time)) count++;
+  }
+  return count;
+}
+
+/// Who is out of qualifying during part [phase] (1, 2 or 3), and in which
+/// part they went out, worked out from the running order.
+///
+/// Q3 always has 10 cars, and Q1 and Q2 knock out the same number each:
+/// 5 each with 20 cars, 6 each with 22. So once Q2 starts, anyone below
+/// the Q2 places is out in Q1, and once Q3 starts, anyone from 11th down
+/// to there is out in Q2.
+Map<int, int> knockedOutAt(List<int> order, int phase, int entrants) {
+  if (entrants <= 10) return {};
+  final perPart = ((entrants - 10) / 2).ceil();
+  final inQ2 = 10 + perPart;
+  final out = <int, int>{}; // Driver number -> the part they went out in
+  for (var i = 0; i < order.length; i++) {
+    final place = i + 1;
+    if (phase >= 2 && place > inQ2) {
+      out[order[i]] = 1;
+    } else if (phase >= 3 && place > 10) {
+      out[order[i]] = 2;
+    }
+  }
+  return out;
+}
+
+/// The fastest time in each sector, and the fastest lap, among [laps].
+class LapBests {
+  const LapBests(this.sectors, this.lap);
+
+  final List<double?> sectors; // Best sector 1, 2 and 3
+  final double? lap;
+}
+
+LapBests bestsOf(Iterable<Lap> laps) {
+  final sectors = <double?>[null, null, null];
+  double? bestLap;
+  for (final lap in laps) {
+    for (var i = 0; i < 3; i++) {
+      final time = lap.sectors[i];
+      final best = sectors[i];
+      if (time != null && (best == null || time < best)) sectors[i] = time;
+    }
+    final seconds = lap.duration;
+    if (seconds != null && (bestLap == null || seconds < bestLap)) {
+      bestLap = seconds;
+    }
+  }
+  return LapBests(sectors, bestLap);
+}
+
+/// For every lap number, the lap that was driven fastest.
+Map<int, Lap> fastestEachLap(List<Lap> laps) {
+  final fastest = <int, Lap>{};
+  for (final lap in laps) {
+    final seconds = lap.duration;
+    if (seconds == null) continue;
+    final best = fastest[lap.lapNumber]?.duration;
+    if (best == null || seconds < best) fastest[lap.lapNumber] = lap;
+  }
+  return fastest;
 }

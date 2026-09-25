@@ -11,13 +11,16 @@ A Formula 1 companion app for iPhone and the web, built with Flutter. It brings 
 - **Races:** the full season calendar with a live countdown to the next session in your own time zone, a map of every circuit, weekend schedules and race results with places gained or lost.
 - **Predictions:** each driver's chance of winning the next race, worked out from recent form, the championship, last year's result at the same track and qualifying. The top 10 is shown with a percentage and the main reasons for each driver.
 - **Standings:** drivers' and constructors' championships in team colours, with your favourite driver pinned to the top and your favourite team highlighted.
-- **Race tracker:** replay any session since 2023 (practice, qualifying, sprints and races) on an animated circuit map. Every car moves smoothly around the track, with playback from 1x to 20x and a timeline you can scrub. Races show a lap counter, the running order, each driver's tyre and pit stops; practice and qualifying show best lap times, gaps, the session clock (or Q1, Q2, Q3) and which cars are in the garage. Race control messages (flags, safety cars, penalties) and the track weather appear as they happened. Any finished session can also be opened from its race weekend page. Live sessions can be followed with an OpenF1 sponsor account.
+- **Fantasy points:** every driver's and team's fantasy score for the season and the latest race weekend, estimated with the official fantasy game's main scoring rules (qualifying, sprint and race places, places gained or lost, fastest laps, retirements and the team qualifying bonus). Pick five drivers and two teams to follow your own total.
+- **Race tracker:** replay any session since 2023 (practice, qualifying, sprints and races) on an animated circuit map. Every car moves smoothly around the track, with playback from 1x to 20x and a timeline you can scrub. Races show a lap counter, the running order, each driver's tyre and its age in laps, and pit stops; practice and qualifying show best lap times, gaps, the session clock (or Q1, Q2, Q3), how many laps each driver has done, who is in the garage or the pit lane, and who was knocked out in Q1 or Q2. Race control messages (flags, safety cars, penalties) and the track weather appear as they happened. Any finished session can also be opened from its race weekend page. Live sessions can be followed with an OpenF1 sponsor account.
+- **Race analysis:** after a race, the story of how it was won: the start, lead changes, the podium finishers' pit stops, safety cars, penalties, retirements and the fastest lap, each with its lap. Every lap's sector times with the fastest in purple, and who was quickest on each lap. Practice and qualifying show everyone's best lap with its sectors.
 - **News:** headlines from RaceFans, Formula1.com and Autosport, on the phone and on the web.
 - **Race weekend alerts:** a reminder 15 minutes before every session, and an alert when each session's replay is ready, about 30 minutes after it ends. Tap the alert to open the replay. Scheduled on the phone itself, with no server.
 - **Data saver:** no photos, saved results reused for 30 minutes, and replays drawn from lap times instead of GPS, for a small fraction of the mobile data.
 - **Works offline:** the calendar, standings and results are kept on the phone and shown when there is no signal.
 - **Spoiler-free mode:** results, standings, news and predictions stay hidden until you tap Show, for fans who watch later.
-- **Personal setup:** a short onboarding flow for your name, driver and team, and a greeting on the home screen.
+- **Profiles:** everyone who shares a phone gets their own profile, with a name, favourite driver and team, fantasy team and settings. Switch or sign out from the profile badge. Each person gets a personal welcome: the next session, how their driver and team are doing, and their fantasy score.
+- **Betting stats (18+):** an opt-in, per profile, behind an age check. Fair odds from the prediction model and a form guide for every driver (win, podium, points and retirement rates, average finish, teammate head-to-heads). No bookmaker odds, no bets and no links to betting sites, with a responsible gambling note.
 - **F1-inspired design:** a dark theme in racing red and carbon black, the Titillium Web typeface, driver photos, team colours and a custom app icon.
 
 ## Technical highlights
@@ -31,6 +34,9 @@ A Formula 1 companion app for iPhone and the web, built with Flutter. It brings 
 - **News that works in the browser.** Browsers block web pages from reading RSS feeds on other sites (CORS). A scheduled GitHub Actions job copies the feeds next to the website every 30 minutes, so the web version reads them from its own origin. The mobile app reads the feeds directly and falls back to the same copies if a source is down.
 - **Graceful failure.** When OpenF1 locks out non-sponsors during a live session, the app detects the session from the race calendar and explains what is happening instead of showing a generic network error.
 - **Replays on a data budget.** With data saver on, a replay downloads one lap of GPS points for the track outline and every driver's lap times, instead of about four positions a second for every car. Each car is placed along the outline by how far through its lap it is: the reference lap's points were recorded at a steady rate, so the fraction of lap time maps to the right point, corners included.
+- **Profiles without a server.** Profiles live on the phone behind a `ChangeNotifier`. Personal settings are saved under keys that end in the profile's id, and the home screen is keyed by profile, so switching rebuilds every tab with that person's data. Settings from before profiles existed are moved into the first profile on upgrade.
+- **Season statistics from paged data.** Fantasy points and the form guide need every result of the season, which Jolpica serves 100 rows at a time. The client pages through by offset, merges races split across pages, and keeps the season for 15 minutes so both features share one download.
+- **A race story from raw timing data.** The post-race analysis is built entirely from OpenF1 positions, laps, stints, pit stops and race control messages: lead changes are filtered for timing flicker, pit stops are matched to the tyres fitted, and retirements are found with the 90% classification rule. Each moment is tagged with its lap.
 - **Offline-first data.** Every Jolpica answer is saved on the phone behind a small `ResponseCache` interface, so the API layer stays free of Flutter and still runs as a plain Dart script. A failed download falls back to the saved copy.
 - **Local notifications.** Session reminders and replay alerts are planned from the calendar with `flutter_local_notifications`, as absolute UTC times, and refreshed every time the app opens (iOS keeps at most 64 pending).
 - **Continuous deployment.** Every push to `main` runs the test suite and, if it passes, builds and publishes the web version to GitHub Pages.
@@ -66,7 +72,7 @@ flutter analyze
 flutter test
 ```
 
-Unit and widget tests cover the JSON, XML and GeoJSON parsing, the prediction model, the tracker, lap-counter and data-saver maths, tyres, pit stops, race control and weather, alert planning, saved copies when offline, spoiler-free mode, the news fallback, the live-session check, the onboarding name step and the shared widgets. A test also checks that every circuit in the calendar has a map. The same tests run on every push before the website is deployed.
+Unit and widget tests cover the JSON, XML and GeoJSON parsing, the prediction model, the tracker, lap-counter and data-saver maths, tyres, pit stops, race control and weather, qualifying knockouts, tyre age and sector times, fantasy scoring, the form guide, season paging, the race story, profiles and the welcome message, alert planning, saved copies when offline, spoiler-free mode, the news fallback, the live-session check, the onboarding name step and the shared widgets. A test also checks that every circuit in the calendar has a map. The same tests run on every push before the website is deployed.
 
 ## Project structure
 
@@ -78,8 +84,9 @@ lib/
   models/              Data classes built from JSON, XML and GeoJSON
   services/            One class per data source, plus local settings
   predictions/         The prediction model and the data it needs
+  stats/               Fantasy points, form guide, race story and welcome message
   tracker/             Replay controller, interpolation maths and track painter
-  screens/             One file per screen, including onboarding
+  screens/             One file per screen, including onboarding and profiles
   widgets/             Shared UI components
   utils/               Date, time and number formatting
 assets/
@@ -105,6 +112,7 @@ tool/
 | Live tracking | OpenF1 sponsor login, entered in the app's Settings | Off |
 | Session reminders, replay alerts | Settings (iPhone app) | Off |
 | Data saver, spoiler-free mode | Settings | Off |
+| Betting stats | Settings, per profile, 18+ only | Off |
 | News sources | `newsSources` in `lib/config.dart` | RaceFans, Formula1.com, Autosport |
 
 ## Acknowledgements

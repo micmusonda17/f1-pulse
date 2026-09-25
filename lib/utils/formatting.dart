@@ -154,3 +154,13 @@ String formatMinutes(Duration duration) {
   final d = duration.isNegative ? Duration.zero : duration;
   return '${d.inMinutes}:${twoDigits(d.inSeconds % 60)}';
 }
+
+/// A chance as decimal odds, the way South African bookmakers show them:
+/// a 40% chance is 2.50 (bet 1, get 2.50 back). Very long shots are "100+".
+String formatOdds(double chance) {
+  if (chance <= 0.01) return '100+';
+  return (1 / chance).toStringAsFixed(2);
+}
+
+/// 0.25 as "25%", for rates like wins per start.
+String formatRate(double rate) => '${(rate * 100).round()}%';

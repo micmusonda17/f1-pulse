@@ -8,6 +8,7 @@ import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import 'race_analysis_screen.dart';
 
 /// The map: the track and cars on top, the controls, then the running order.
 class TrackerScreen extends StatefulWidget {
@@ -47,6 +48,18 @@ class _TrackerScreenState extends State<TrackerScreen> {
       appBar: AppBar(
         title: Text(widget.session.title),
         actions: [
+          // Sector times, and the story of a race (Chapters 50 and 51).
+          IconButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    RaceAnalysisScreen(session: widget.session),
+              ),
+            ),
+            icon: const Icon(Icons.analytics_outlined),
+            tooltip: 'Lap times and analysis',
+          ),
           if (widget.mode == TrackerMode.live)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -167,6 +180,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
                       : null,
                   notes: _controller.carNotes,
                   tyres: _controller.tyres,
+                  tyreAges: _controller.tyreAges,
                 ),
               ),
             ],
@@ -337,6 +351,7 @@ class Leaderboard extends StatelessWidget {
     this.bestLaps,
     this.notes = const {},
     this.tyres = const {},
+    this.tyreAges = const {},
   });
 
   final List<int> order; // Driver numbers, leader first
@@ -344,6 +359,7 @@ class Leaderboard extends StatelessWidget {
   final Map<int, double>? bestLaps; // Practice and qualifying only
   final Map<int, String> notes; // "In the pit lane", "2 stops"...
   final Map<int, String> tyres; // "SOFT", "MEDIUM"...
+  final Map<int, int> tyreAges; // Laps on those tyres
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +412,7 @@ class Leaderboard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (tyres[number] case final compound?) ...[
-                TyreDot(compound: compound),
+                TyreDot(compound: compound, age: tyreAges[number]),
                 const SizedBox(width: 8),
               ],
               Text(
@@ -424,9 +440,10 @@ String lapTimeOrGap(double? seconds, double? fastest) {
 /// A tyre in its compound's colour with its first letter, like the TV:
 /// red S for soft, yellow M, white H, green I for intermediate, blue W.
 class TyreDot extends StatelessWidget {
-  const TyreDot({super.key, required this.compound});
+  const TyreDot({super.key, required this.compound, this.age});
 
   final String compound; // "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
+  final int? age; // Laps on these tyres, shown beside the dot
 
   static const Map<String, Color> colours = {
     'SOFT': Color(0xFFE10600),
@@ -439,7 +456,7 @@ class TyreDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colour = colours[compound] ?? F1Colors.muted;
-    return Container(
+    final dot = Container(
       width: 20,
       height: 20,
       alignment: Alignment.center,
@@ -455,6 +472,20 @@ class TyreDot extends StatelessWidget {
           fontWeight: FontWeight.w900,
         ),
       ),
+    );
+    final laps = age;
+    if (laps == null) return dot;
+    // The tyre's age beside it: "M 12" means mediums that have done 12 laps.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        dot,
+        const SizedBox(width: 4),
+        Text(
+          '$laps',
+          style: const TextStyle(fontSize: 11, color: F1Colors.muted),
+        ),
+      ],
     );
   }
 }

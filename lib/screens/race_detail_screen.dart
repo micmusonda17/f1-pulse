@@ -14,6 +14,7 @@ import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
 import '../widgets/spoiler_gate.dart';
 import 'prediction_screen.dart';
+import 'race_analysis_screen.dart';
 import 'tracker_screen.dart';
 
 /// One race weekend: the session times, and the results once it is over.
@@ -47,8 +48,9 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
   }
 
   /// Finds the session that started at [start] in OpenF1 (the race, or
-  /// practice, qualifying or a sprint) and opens its replay.
-  Future<void> _openReplay(DateTime? start) async {
+  /// practice, qualifying or a sprint) and opens its replay, or with
+  /// [analysis], its lap times and story (Chapter 51).
+  Future<void> _openReplay(DateTime? start, {bool analysis = false}) async {
     if (start == null) return;
 
     setState(() => _findingReplay = true);
@@ -63,8 +65,9 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) =>
-              TrackerScreen(session: session, mode: TrackerMode.replay),
+          builder: (context) => analysis
+              ? RaceAnalysisScreen(session: session)
+              : TrackerScreen(session: session, mode: TrackerMode.replay),
         ),
       );
     } on ApiException catch (e) {
@@ -151,6 +154,16 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
                 label: Text(
                   _findingReplay ? 'Finding the replay...' : 'Watch the replay',
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: OutlinedButton.icon(
+                onPressed: _findingReplay
+                    ? null
+                    : () => _openReplay(race.start, analysis: true),
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('Race story and lap times'),
               ),
             ),
             const SectionHeader('Results'),

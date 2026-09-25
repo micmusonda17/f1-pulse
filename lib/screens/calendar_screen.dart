@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../models/race.dart';
 import '../services/jolpica_api.dart';
+import '../services/profile_store.dart';
 import '../services/race_alerts.dart';
-import '../services/settings_store.dart';
 import '../theme.dart';
 import '../utils/formatting.dart';
 import '../widgets/circuit_outline.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/countdown.dart';
+import '../widgets/welcome_card.dart';
 import 'prediction_screen.dart';
+import 'profiles_screen.dart';
 import 'race_detail_screen.dart';
 import 'settings_screen.dart';
 
@@ -24,14 +26,12 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   final JolpicaApi _api = JolpicaApi();
   late Future<List<Race>> _races;
-  String? _name; // From the welcome page, for the greeting
 
   @override
   void initState() {
     super.initState();
     _races = _api.getSchedule(); // Start downloading straight away
     _planAlerts();
-    _loadName();
   }
 
   /// Once the calendar arrives, plan the session reminders and replay
@@ -44,10 +44,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  Future<void> _loadName() async {
-    final name = await SettingsStore().getName();
-    if (mounted) setState(() => _name = name);
-  }
 
   Future<void> _refresh() async {
     setState(() {
@@ -61,13 +57,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _planAlerts();
   }
 
-  Future<void> _openSettings() async {
-    // await waits here until you come back from Settings.
-    await Navigator.push(
+  void _openSettings() {
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const SettingsScreen()),
     );
-    _loadName(); // You may have changed your name there
   }
 
   @override
@@ -76,6 +70,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       appBar: AppBar(
         title: const Text('Pitbeat'),
         actions: [
+          // Your profile badge: tap it to switch profile or sign out.
+          ListenableBuilder(
+            listenable: ProfileStore.instance,
+            builder: (context, _) {
+              final profile = ProfileStore.instance.current;
+              if (profile == null) return const SizedBox.shrink();
+              return IconButton(
+                onPressed: () => showProfileSwitcher(context),
+                icon: ProfileBadge(profile: profile, size: 30),
+                tooltip: 'Switch profile',
+              );
+            },
+          ),
           IconButton(
             onPressed: _openSettings,
             icon: const Icon(Icons.settings),
@@ -106,15 +113,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onRefresh: _refresh,
             child: ListView(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Text(
-                    greetingFor(_name),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
+                // Hello, what is next, and how your picks are doing.
+                WelcomeCard(nextRace: nextRace),
                 if (nextRace != null) ...[
                   NextRaceCard(race: nextRace),
                   PredictionTeaser(race: nextRace),
