@@ -358,4 +358,24 @@ void main() {
       expect(result.reachedQ3, isFalse);
     });
   });
+
+  test('race control scope, sector and car; the whole weather', () {
+    final flag = RaceControlMessage.fromJson(decode(
+      '{"date": "2025-10-26T20:40:00+00:00", "category": "Flag", '
+      '"flag": "YELLOW", "scope": "Sector", "sector": 7, '
+      '"driver_number": 16, "message": "YELLOW IN TRACK SECTOR 7"}',
+    ));
+    expect(flag.scope, 'Sector');
+    expect(flag.sector, 7);
+    expect(flag.driverNumber, 16);
+
+    final weather = WeatherReading.fromJson(decode(
+      '{"date": "2025-10-26T20:40:00+00:00", "air_temperature": 27.8, '
+      '"track_temperature": 41.2, "rainfall": 0, "humidity": 45.0, '
+      '"wind_speed": 3.2, "wind_direction": 225}',
+    ));
+    expect(weather.humidity, 45);
+    expect(weather.windSpeed, 3.2);
+    expect(weather.windDirection, 225);
+  });
 }

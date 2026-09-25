@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
 import '../services/app_preferences.dart';
+import '../services/settings_store.dart';
 import '../theme.dart';
+import '../tracker/race_status.dart';
 import '../tracker/track_painter.dart';
 import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import '../widgets/race_widgets.dart';
+import '../widgets/strategy_chart.dart';
+import '../widgets/track_3d_view.dart';
+import 'driver_sheet.dart';
 import 'race_analysis_screen.dart';
 
 /// The map: the track and cars on top, the controls, then the running order.
@@ -24,6 +30,11 @@ class TrackerScreen extends StatefulWidget {
 class _TrackerScreenState extends State<TrackerScreen> {
   late final TrackerController _controller;
   double? _dragSeconds; // Where the slider is while your finger is on it
+  bool _show3d = false; // The 3D view instead of the flat map (Chapter 55)
+  int? _follow; // The car the 3D camera follows
+  bool _showStrategy = false; // Pit stops under the map instead of the order
+  String? _favouriteId; // Your drivers, as Jolpica ids, for the 3D view
+  List<String> _fantasyIds = [];
 
   @override
   void initState() {
@@ -34,6 +45,67 @@ class _TrackerScreenState extends State<TrackerScreen> {
       saveData: AppPreferences.instance.dataSaver,
     );
     _controller.start();
+    _loadMyDrivers();
+  }
+
+  /// Your favourite and fantasy drivers get a ring in the 3D view.
+  Future<void> _loadMyDrivers() async {
+    final settings = SettingsStore();
+    final favourite = await settings.getFavouriteDriver();
+    final fantasy = await settings.getFantasyDrivers();
+    if (!mounted) return;
+    setState(() {
+      _favouriteId = favourite;
+      _fantasyIds = fantasy;
+    });
+  }
+
+  /// Gold for your favourite driver, white for your fantasy team.
+  Map<int, Color> get _rings {
+    final drivers = _controller.drivers;
+    return {
+      for (final number in carNumbersFor(_fantasyIds, drivers))
+        number: Colors.white,
+      for (final number in carNumbersFor([?_favouriteId], drivers))
+        number: const Color(0xFFFFD700),
+    };
+  }
+
+  /// Everything about one driver, in a sheet from the bottom.
+  void _openDriver(int number) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DriverSheet(
+        controller: _controller,
+        number: number,
+        onFollow: () {
+          Navigator.pop(sheetContext);
+          setState(() {
+            _follow = number;
+            _show3d = true;
+          });
+        },
+      ),
+    );
+  }
+
+  void _toggle3d() {
+    setState(() {
+      _show3d = !_show3d;
+      if (!_show3d) _follow = null;
+    });
+    if (_show3d) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Drag to turn, pinch to zoom, double tap to reset. '
+            'Tap a driver below to follow them.',
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -78,12 +150,32 @@ class _TrackerScreenState extends State<TrackerScreen> {
             return LoadingView(message: _controller.message);
           }
 
-          final message = _controller.message;
-          final lap = _controller.currentLap;
-          final timeLeft = _controller.timeLeft;
-          final phase = _controller.qualifyingPhase;
-          final weather = _controller.weather;
-          final raceControl = _controller.latestMessage;
+          final c = _controller;
+          final message = c.message;
+          final lap = c.currentLap;
+          final timeLeft = c.timeLeft;
+          final phase = c.qualifyingPhase;
+          final raceControl = c.latestMessage;
+          final fastest = c.fastestLapSoFar;
+
+          // Who is out, and the order to show: in races, cars still racing
+          // first and cars that are out at the bottom, greyed (Chapter 52).
+          final out = c.outNotes;
+          final order = c.runningOrder;
+          final running = [
+            for (final number in order)
+              if (!out.containsKey(number)) number,
+          ];
+          final board = c.countsLaps
+              ? [
+                  ...running,
+                  for (final number in order)
+                    if (out.containsKey(number)) number,
+                  for (final number in out.keys)
+                    if (!order.contains(number)) number,
+                ]
+              : order;
+
           return Column(
             children: [
               Expanded(
@@ -91,18 +183,26 @@ class _TrackerScreenState extends State<TrackerScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   // A Stack puts its children on top of each other: the map
-                  // first, then the lap counter (races) or the session clock
-                  // (practice) in the top left corner.
+                  // first, then the badges in its corners.
                   child: Stack(
                     children: [
-                      CustomPaint(
-                        painter: TrackPainter(
-                          outline: _controller.trackOutline,
-                          cars: _controller.carPositions,
-                          drivers: _controller.drivers,
+                      if (_show3d)
+                        Track3DView(
+                          controller: c,
+                          follow: _follow,
+                          rings: _rings,
+                          outCars: out.keys.toSet(),
+                        )
+                      else
+                        CustomPaint(
+                          painter: TrackPainter(
+                            outline: c.trackOutline,
+                            cars: c.carPositions,
+                            drivers: c.drivers,
+                            outCars: out.keys.toSet(),
+                          ),
+                          child: const SizedBox.expand(),
                         ),
-                        child: const SizedBox.expand(),
-                      ),
                       if (lap != null)
                         Positioned(
                           top: 0,
@@ -110,9 +210,9 @@ class _TrackerScreenState extends State<TrackerScreen> {
                           child: MapBadge(
                             label: 'LAP ',
                             value: '$lap',
-                            suffix: _controller.totalLaps == null
+                            suffix: c.totalLaps == null
                                 ? null
-                                : '/${_controller.totalLaps}',
+                                : '/${c.totalLaps}',
                           ),
                         ),
                       if (timeLeft != null)
@@ -130,21 +230,52 @@ class _TrackerScreenState extends State<TrackerScreen> {
                           left: 0,
                           child: MapBadge(label: 'Q', value: '$phase'),
                         ),
-                      if (weather != null)
+                      // The flags, top right (Chapter 53).
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: TrackStatusBadge(state: c.trackState),
+                      ),
+                      // 2D or 3D, bottom left (Chapter 55).
+                      Positioned(
+                        left: 0,
+                        bottom: 0,
+                        child: OutlinedButton.icon(
+                          onPressed: _toggle3d,
+                          icon: Icon(
+                            _show3d ? Icons.map_outlined : Icons.view_in_ar,
+                            size: 18,
+                          ),
+                          label: Text(_show3d ? '2D' : '3D'),
+                        ),
+                      ),
+                      if (_show3d && _follow != null)
                         Positioned(
-                          top: 0,
+                          top: 40,
+                          left: 0,
                           right: 0,
-                          child: MapBadge(
-                            label: 'TRACK ',
-                            value: '${weather.trackTemperature.round()}°',
-                            suffix: weather.isRaining
-                                ? '  RAIN'
-                                : '  AIR ${weather.airTemperature.round()}°',
+                          child: Center(
+                            child: InputChip(
+                              avatar: const Icon(Icons.videocam, size: 16),
+                              label: Text(
+                                'Following '
+                                '${c.drivers[_follow]?.acronym ?? '#$_follow'}',
+                              ),
+                              onDeleted: () => setState(() => _follow = null),
+                            ),
                           ),
                         ),
                     ],
                   ),
                 ),
+              ),
+              SessionInfoStrip(
+                weather: c.weather,
+                fastestLap: fastest,
+                fastestCode: fastest == null
+                    ? null
+                    : c.drivers[fastest.driverNumber]?.acronym,
+                lapsToGo: c.lapsToGo,
               ),
               if (raceControl != null) RaceControlBanner(message: raceControl),
               if (message != null)
@@ -155,7 +286,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-              if (_controller.placesCarsByLaps)
+              if (c.placesCarsByLaps)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
@@ -170,18 +301,54 @@ class _TrackerScreenState extends State<TrackerScreen> {
               else
                 _buildLiveBar(),
               const Divider(height: 1),
+              // The running order, or everyone's tyres and pit stops
+              // (Chapter 54).
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+                child: SegmentedButton<bool>(
+                  segments: [
+                    const ButtonSegment(
+                      value: false,
+                      label: Text('Running order'),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: Text(c.countsLaps ? 'Pit stops' : 'Tyres'),
+                    ),
+                  ],
+                  selected: {_showStrategy},
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onSelectionChanged: (choice) =>
+                      setState(() => _showStrategy = choice.first),
+                ),
+              ),
               Expanded(
                 flex: 4,
-                child: Leaderboard(
-                  order: _controller.runningOrder,
-                  drivers: _controller.drivers,
-                  bestLaps: _controller.showsLapTimes
-                      ? _controller.bestLaps
-                      : null,
-                  notes: _controller.carNotes,
-                  tyres: _controller.tyres,
-                  tyreAges: _controller.tyreAges,
-                ),
+                child: _showStrategy
+                    ? StrategyChart(
+                        strategies: c.strategiesNow(board),
+                        drivers: c.drivers,
+                        totalLaps: c.countsLaps
+                            ? (c.totalLaps ?? lap ?? 1)
+                            : c.highestLap,
+                        countStops: c.countsLaps,
+                      )
+                    : Leaderboard(
+                        order: board,
+                        drivers: c.drivers,
+                        bestLaps: c.showsLapTimes ? c.bestLaps : null,
+                        notes: c.carNotes,
+                        tyres: c.tyres,
+                        tyreAges: c.tyreAges,
+                        out: out,
+                        outIsRetired: c.countsLaps,
+                        gaps: c.gapsFor(running),
+                        fastestLapDriver: fastest?.driverNumber,
+                        onTap: _openDriver,
+                      ),
               ),
             ],
           );
@@ -352,6 +519,11 @@ class Leaderboard extends StatelessWidget {
     this.notes = const {},
     this.tyres = const {},
     this.tyreAges = const {},
+    this.out = const {},
+    this.outIsRetired = false,
+    this.gaps = const {},
+    this.fastestLapDriver,
+    this.onTap,
   });
 
   final List<int> order; // Driver numbers, leader first
@@ -360,6 +532,11 @@ class Leaderboard extends StatelessWidget {
   final Map<int, String> notes; // "In the pit lane", "2 stops"...
   final Map<int, String> tyres; // "SOFT", "MEDIUM"...
   final Map<int, int> tyreAges; // Laps on those tyres
+  final Map<int, String> out; // Who is out, and why (Chapter 52)
+  final bool outIsRetired; // Races: show OUT instead of a place
+  final Map<int, CarGaps> gaps; // Races: interval and gap (Chapter 53)
+  final int? fastestLapDriver; // Gets a purple stopwatch
+  final void Function(int number)? onTap; // Opens the driver's sheet
 
   @override
   Widget build(BuildContext context) {
@@ -381,16 +558,20 @@ class Leaderboard extends StatelessWidget {
         final number = order[index];
         final driver = drivers[number];
         final colour = driver?.colour ?? Colors.grey;
-        return ListTile(
+        final reason = out[number];
+        final retired = reason != null && outIsRetired;
+
+        final row = ListTile(
           dense: true,
           visualDensity: VisualDensity.compact,
+          onTap: onTap == null ? null : () => onTap!(number),
           leading: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
                 width: 32,
                 child: Text(
-                  'P${index + 1}',
+                  retired ? 'OUT' : 'P${index + 1}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
@@ -405,26 +586,86 @@ class Leaderboard extends StatelessWidget {
             ],
           ),
           title: Text(driver?.fullName ?? 'Car $number'),
+          // A driver who is out shows why, instead of the usual notes.
           subtitle: Text(
-            [driver?.team ?? '', ?notes[number]].join('  ·  '),
+            reason ?? [driver?.team ?? '', ?notes[number]].join('  ·  '),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (tyres[number] case final compound?) ...[
-                TyreDot(compound: compound, age: tyreAges[number]),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                times == null
-                    ? driver?.acronym ?? '$number'
-                    : lapTimeOrGap(times[number], fastest),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
+          trailing: retired
+              ? null
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (number == fastestLapDriver) ...[
+                      const Icon(
+                        Icons.timer_outlined,
+                        size: 16,
+                        color: fastestPurple,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (tyres[number] case final compound?) ...[
+                      TyreDot(compound: compound, age: tyreAges[number]),
+                      const SizedBox(width: 8),
+                    ],
+                    if (times != null)
+                      Text(
+                        lapTimeOrGap(times[number], fastest),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      )
+                    else
+                      _RaceGap(
+                        isLeader: index == 0,
+                        gaps: gaps[number],
+                        code: driver?.acronym ?? '$number',
+                      ),
+                  ],
+                ),
         );
+        // Out: the whole row fades to grey.
+        return reason == null ? row : Opacity(opacity: 0.45, child: row);
       },
+    );
+  }
+}
+
+/// A race row's timing: the interval to the car ahead in bold, and the
+/// gap to the leader under it, like the TV.
+class _RaceGap extends StatelessWidget {
+  const _RaceGap({
+    required this.isLeader,
+    required this.gaps,
+    required this.code,
+  });
+
+  final bool isLeader;
+  final CarGaps? gaps;
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    final ahead = gaps?.toAhead;
+    final leader = gaps?.toLeader;
+    final String top;
+    if (isLeader) {
+      top = 'Leader';
+    } else if (ahead != null) {
+      top = formatGap(ahead);
+    } else {
+      top = code; // Lap 1: no gaps yet
+    }
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(top, style: const TextStyle(fontWeight: FontWeight.bold)),
+        if (leader != null)
+          Text(
+            formatGap(leader),
+            style: const TextStyle(fontSize: 11, color: F1Colors.muted),
+          ),
+      ],
     );
   }
 }
@@ -445,17 +686,10 @@ class TyreDot extends StatelessWidget {
   final String compound; // "SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"
   final int? age; // Laps on these tyres, shown beside the dot
 
-  static const Map<String, Color> colours = {
-    'SOFT': Color(0xFFE10600),
-    'MEDIUM': Color(0xFFFFD12E),
-    'HARD': Color(0xFFF0F0F0),
-    'INTERMEDIATE': Color(0xFF43B02A),
-    'WET': Color(0xFF0067AD),
-  };
-
   @override
   Widget build(BuildContext context) {
-    final colour = colours[compound] ?? F1Colors.muted;
+    // The colours live in theme.dart, shared with the strategy chart.
+    final colour = F1Colors.tyres[compound] ?? F1Colors.muted;
     final dot = Container(
       width: 20,
       height: 20,

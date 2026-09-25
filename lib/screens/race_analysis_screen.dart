@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import '../models/openf1_models.dart';
 import '../services/openf1_api.dart';
 import '../stats/race_story.dart';
+import '../stats/strategy.dart';
 import '../theme.dart';
 import '../tracker/tracker_math.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/driver_widgets.dart';
+import '../widgets/race_widgets.dart';
 import '../widgets/spoiler_gate.dart';
-
-/// The colour F1 uses for the fastest time: purple.
-const Color fastestPurple = Color(0xFFB138DD);
+import '../widgets/strategy_chart.dart';
 
 /// Everything the analysis needs from OpenF1, downloaded once.
 class AnalysisData {
@@ -72,17 +72,19 @@ class _RaceAnalysisScreenState extends State<RaceAnalysisScreen> {
     final tabs = _isRace
         ? const [
             Tab(text: 'Story'),
+            Tab(text: 'Strategy'),
             Tab(text: 'Lap times'),
             Tab(text: 'Fastest laps'),
           ]
-        : const [Tab(text: 'Best laps')];
+        : const [Tab(text: 'Best laps'), Tab(text: 'Tyres')];
 
     return DefaultTabController(
       length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.session.title),
-          bottom: TabBar(tabs: tabs),
+          // Scrollable: four tabs do not fit across a small phone.
+          bottom: TabBar(tabs: tabs, isScrollable: _isRace),
         ),
         body: SpoilerGate(
           topic: 'analysis-${widget.session.sessionKey}',
@@ -104,10 +106,14 @@ class _RaceAnalysisScreenState extends State<RaceAnalysisScreen> {
                 children: _isRace
                     ? [
                         StoryTab(data: data),
+                        StrategyTab(data: data, isRace: true),
                         LapTimesTab(data: data),
                         FastestLapsTab(data: data),
                       ]
-                    : [BestLapsTab(data: data)],
+                    : [
+                        BestLapsTab(data: data),
+                        StrategyTab(data: data, isRace: false),
+                      ],
               );
             },
           ),
@@ -551,3 +557,39 @@ class BestLapsTab extends StatelessWidget {
     );
   }
 }
+
+// ----------------------------------------------------------------------
+// Strategy: everyone's tyres and pit stops (Chapter 54)
+// ----------------------------------------------------------------------
+
+/// The whole session's strategy chart, in finishing order.
+class StrategyTab extends StatelessWidget {
+  const StrategyTab({super.key, required this.data, required this.isRace});
+
+  final AnalysisData data;
+  final bool isRace;
+
+  @override
+  Widget build(BuildContext context) {
+    final positions = data.positions;
+    final order = positions.isEmpty
+        ? data.drivers.keys.toList()
+        : runningOrderAt(positions, positions.last.date);
+    var totalLaps = 1;
+    for (final lap in data.laps) {
+      if (lap.lapNumber > totalLaps) totalLaps = lap.lapNumber;
+    }
+    return StrategyChart(
+      strategies: strategies(
+        order: order,
+        stints: data.stints,
+        pitStops: data.pitStops,
+        lapsByDriver: lapsByDriver(data.laps),
+      ),
+      drivers: data.drivers,
+      totalLaps: totalLaps,
+      countStops: isRace,
+    );
+  }
+}
+

@@ -121,3 +121,21 @@ Race? findNextRace(List<Race> races) {
   }
   return null;
 }
+
+/// The race weekend that [time] falls in: the race that starts closest to
+/// it, if one starts within four days. It matches an OpenF1 session to
+/// Jolpica's calendar (Chapter 52).
+Race? raceNear(List<Race> races, DateTime time) {
+  Race? closest;
+  var closestGap = const Duration(days: 4);
+  for (final race in races) {
+    final start = race.start;
+    if (start == null) continue;
+    final gap = start.difference(time).abs();
+    if (gap < closestGap) {
+      closest = race;
+      closestGap = gap;
+    }
+  }
+  return closest;
+}

@@ -1,13 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
 
 import '../config.dart';
 import '../models/openf1_models.dart';
+import '../models/race.dart';
 import '../services/api_exception.dart';
+import '../services/jolpica_api.dart';
 import '../services/openf1_api.dart';
 import '../services/settings_store.dart';
+import '../stats/strategy.dart';
+import 'race_status.dart';
+import 'track3d.dart';
 import 'tracker_math.dart';
 
 /// Replay plays back a finished session. Live follows one happening now.
@@ -39,6 +45,7 @@ class TrackerController extends ChangeNotifier {
   String? message; // Loading steps, or a small warning while running
   Map<int, DriverInfo> drivers = {};
   List<Offset> trackOutline = [];
+  List<Point3> trackOutline3d = []; // The same lap, with heights (Chapter 55)
   DateTime clock; // The moment of the race we are showing
   bool isPlaying = false;
   int speed = 1;
@@ -59,6 +66,7 @@ class TrackerController extends ChangeNotifier {
   List<PitStop> _pitStops = [];
   List<RaceControlMessage> _messages = [];
   List<WeatherReading> _weather = [];
+  Map<String, String> _statusByCode = {}; // Jolpica: "LEC" -> "Engine"
   DateTime _lastLapPoll = DateTime(2000);
   DateTime? _loadedUntil; // Replay: we have car data up to here
   DateTime? _liveCursor; // Live: the newest car data we have
@@ -114,7 +122,7 @@ class TrackerController extends ChangeNotifier {
 
   /// The race's lap at [clock], or null before the start (and in practice
   /// or qualifying, where a lap count means nothing).
-  int? get currentLap => lapAt(_lapTimeline, clock);
+  int? get currentLap => countsLaps ? lapAt(_lapTimeline, clock) : null;
 
   /// Races and sprints count laps. OpenF1 calls both of them type "Race".
   bool get countsLaps => session.type == 'Race';
@@ -149,18 +157,14 @@ class TrackerController extends ChangeNotifier {
     return result;
   }
 
-  /// A short note for each car that has one, like "Out in Q1  ·  6 laps"
-  /// or "In the pit lane  ·  1 stop".
+  /// A short note for each car that has one, like "In the garage  ·  6
+  /// laps" or "In the pit lane  ·  1 stop". Cars that are out get a note
+  /// of their own, from outNotes.
   Map<int, String> get carNotes {
     final garage = inGarage;
-    final phase = qualifyingPhase;
-    final out = phase == null
-        ? const <int, int>{}
-        : knockedOutAt(runningOrder, phase, drivers.length);
     final result = <int, String>{};
     for (final number in drivers.keys) {
       final notes = <String>[];
-      if (out[number] case final part?) notes.add('Out in Q$part');
       if (garage.contains(number)) {
         notes.add('In the garage');
       } else if (isInPitLane(_pitStops, number, clock)) {
@@ -200,6 +204,148 @@ class TrackerController extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------
+  // Who is out, flags, gaps and the fastest lap (Chapters 52 and 53)
+  // ------------------------------------------------------------------
+
+  /// Everyone who is out at [clock], and why: knocked out of qualifying,
+  /// retired from a race, or never started.
+  Map<int, String> get outNotes {
+    final result = <int, String>{};
+    final phase = qualifyingPhase;
+    if (phase != null) {
+      final order = runningOrder;
+      final out = knockedOutAt(order, phase, drivers.length);
+      for (final entry in out.entries) {
+        final place = order.indexOf(entry.key) + 1;
+        result[entry.key] = 'Knocked out in Q${entry.value}, P$place';
+      }
+      return result;
+    }
+    if (!countsLaps) return result; // Nobody is out of practice
+
+    final retired = findRetirements(
+      _lapsByDriver,
+      clock: clock,
+      chequered: _chequeredFlag,
+      pitStops: _pitStops,
+    );
+    for (final entry in retired.entries) {
+      final code = drivers[entry.key]?.acronym;
+      final about =
+          messagesAbout(_messages, entry.key, code: code, until: clock);
+      result[entry.key] = retirementNote(
+        entry.value,
+        status: code == null ? null : _statusByCode[code],
+        message: explainingMessage(about, entry.value.at),
+      );
+    }
+    // A car with no laps at all, once the race is under way, never started.
+    final lightsOut = _lapTimeline.isEmpty ? null : _lapTimeline.first.date;
+    if (lightsOut != null &&
+        clock.isAfter(lightsOut.add(const Duration(minutes: 2)))) {
+      for (final number in drivers.keys) {
+        if ((_lapsByDriver[number] ?? const []).isEmpty) {
+          result[number] = 'Did not start';
+        }
+      }
+    }
+    return result;
+  }
+
+  /// When the chequered flag came out, if it has (races only).
+  DateTime? get _chequeredFlag {
+    for (final message in _messages) {
+      if (message.flag == 'CHEQUERED') return message.date;
+    }
+    return null;
+  }
+
+  /// The race gaps at [clock] for the cars still racing, in [running]
+  /// order: to the car ahead and to the leader. Empty outside races.
+  Map<int, CarGaps> gapsFor(List<int> running) =>
+      countsLaps ? gapsAt(_lapsByDriver, running, clock) : const {};
+
+  /// Green, yellow, safety car, red or chequered, at [clock].
+  TrackState get trackState => trackStateAt(_messages, clock);
+
+  /// The fastest lap of the session so far.
+  Lap? get fastestLapSoFar => fastestLapAt(_laps, clock);
+
+  /// Races with a known length: how many laps are left after this one.
+  int? get lapsToGo {
+    final total = totalLaps;
+    final lap = currentLap;
+    if (total == null || lap == null) return null;
+    return math.max(0, total - lap);
+  }
+
+  /// The highest lap number anyone has started: the length of the
+  /// strategy chart in practice and qualifying.
+  int get highestLap {
+    var highest = 1;
+    for (final lap in _laps) {
+      highest = math.max(highest, lap.lapNumber);
+    }
+    return highest;
+  }
+
+  /// Tyres and pit stops so far, for the drivers in [order] (Chapter 54).
+  List<DriverStrategy> strategiesNow(List<int> order) => strategies(
+        order: order,
+        stints: _stints,
+        pitStops: _pitStops,
+        lapsByDriver: _lapsByDriver,
+        until: clock,
+      );
+
+  /// Race control's messages about one car, up to [clock].
+  List<RaceControlMessage> messagesFor(int number) => messagesAbout(
+        _messages,
+        number,
+        code: drivers[number]?.acronym,
+        until: clock,
+      );
+
+  // ------------------------------------------------------------------
+  // The 3D view (Chapter 55)
+  // ------------------------------------------------------------------
+
+  /// The clock between ticks. The 3D view draws every frame, about 60
+  /// times a second, so it adds the time since the last tick (at the
+  /// playing speed) to move the cars smoothly.
+  DateTime smoothClock() {
+    if (mode == TrackerMode.live) return _liveClock();
+    if (!isPlaying) return clock;
+    var since = DateTime.now().difference(_lastTick);
+    if (since > const Duration(milliseconds: 250)) {
+      since = const Duration(milliseconds: 250);
+    }
+    return clock.add(since * speed);
+  }
+
+  /// Every car's position in 3D at [time].
+  Map<int, Point3> carPositions3dAt(DateTime time) {
+    final numbers = placesCarsByLaps ? _lapsByDriver.keys : _locations.keys;
+    final result = <int, Point3>{};
+    for (final number in numbers) {
+      final point = carPosition3dAt(number, time);
+      if (point != null) result[number] = point;
+    }
+    return result;
+  }
+
+  /// One car's position in 3D at [time], or null if it is not on track.
+  Point3? carPosition3dAt(int number, DateTime time) {
+    if (placesCarsByLaps) {
+      final fraction = lapProgressAt(_lapsByDriver[number] ?? const [], time);
+      return fraction == null ? null : pointAlong3(trackOutline3d, fraction);
+    }
+    final points = _locations[number];
+    if (points == null || isInGarageAt(points, time)) return null;
+    return position3At(points, time);
+  }
+
+  // ------------------------------------------------------------------
   // Starting up
   // ------------------------------------------------------------------
 
@@ -229,9 +375,12 @@ class TrackerController extends ChangeNotifier {
 
       _setMessage('Loading tyres, pit stops and flags');
       await _loadExtras();
+      await _loadStatuses();
 
       _setMessage('Drawing the track');
-      trackOutline = await _loadOutline();
+      final outline = await _loadOutline();
+      trackOutline = [for (final point in outline) Offset(point.x, point.y)];
+      trackOutline3d = [for (final point in outline) pointOf(point)];
 
       if (placesCarsByLaps) {
         // Data saver: the lap times are all we need. No GPS downloads.
@@ -266,8 +415,9 @@ class TrackerController extends ChangeNotifier {
     }
   }
 
-  /// Draws the circuit by following one car around one full lap.
-  Future<List<Offset>> _loadOutline() async {
+  /// Draws the circuit by following one car around one full lap. The
+  /// points keep their heights, for the 3D view.
+  Future<List<CarLocation>> _loadOutline() async {
     final sessionsToTry = <OpenF1Session>[session];
     if (mode == TrackerMode.live) {
       // Early in a live session nobody has done three laps yet, so we also
@@ -306,7 +456,7 @@ class TrackerController extends ChangeNotifier {
 
   /// The points one car drove during one lap, joined up into an outline.
   /// Empty if the lap has no time or OpenF1 has too few points for it.
-  Future<List<Offset>> _outlineFromLap(int sessionKey, Lap lap) async {
+  Future<List<CarLocation>> _outlineFromLap(int sessionKey, Lap lap) async {
     final lapStart = lap.start;
     final lapSeconds = lap.duration;
     if (lapStart == null || lapSeconds == null) return [];
@@ -319,8 +469,7 @@ class TrackerController extends ChangeNotifier {
       to: lapEnd,
       driverNumber: lap.driverNumber,
     );
-    if (points.length <= 50) return [];
-    return [for (final point in points) Offset(point.x, point.y)];
+    return points.length <= 50 ? [] : points;
   }
 
   // ------------------------------------------------------------------
@@ -486,36 +635,13 @@ class TrackerController extends ChangeNotifier {
     }
   }
 
-  /// Races download laps for the lap counter; practice and qualifying
-  /// download them for the lap times.
-  Future<void> _updateLaps() => countsLaps ? _loadLaps() : _loadLapTimes();
-
-  /// Downloads laps for the lap counter. The first time that is every lap
-  /// so far. After that (live only) it is just the laps numbered higher
-  /// than the race's current lap, which is all the counter needs.
-  Future<void> _loadLaps() async {
-    _lastLapPoll = DateTime.now();
-    final highest = _lapTimeline.isEmpty ? 0 : _lapTimeline.last.lap;
-    try {
-      final newLaps = await _api.getLaps(session.sessionKey, above: highest);
-      if (newLaps.isEmpty) return;
-      _laps.addAll(newLaps);
-      _lapTimeline = buildLapTimeline(_laps);
-      _lapsByDriver = lapsByDriver(_laps);
-      if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
-        totalLaps = _lapTimeline.last.lap; // The last lap anyone started
-      }
-    } on ApiException {
-      // The tracker works fine without the counter, so we just leave it out.
-    }
-  }
-
-  /// Downloads laps for the lap times in practice and qualifying.
-  ///
-  /// A lap only gets its time when it ends, so a live session cannot just
-  /// ask for laps it has not seen. Instead it asks for every lap started in
-  /// the last five minutes, and those replace the copies we already have.
-  Future<void> _loadLapTimes() async {
+  /// Downloads the laps: for the lap counter in races, and the lap times
+  /// in practice and qualifying. The first time, that is every lap so far.
+  /// After that (live only) it is every lap started in the last five
+  /// minutes: a lap only gets its time when it ends, so those fresh copies
+  /// replace the ones we have. Every car's latest laps, not just the
+  /// leader's, keep the tyres, gaps and retirements right (Chapter 52).
+  Future<void> _updateLaps() async {
     _lastLapPoll = DateTime.now();
     final since = mode == TrackerMode.live && _laps.isNotEmpty
         ? DateTime.now().toUtc().subtract(const Duration(minutes: 5))
@@ -527,8 +653,14 @@ class TrackerController extends ChangeNotifier {
       _laps.removeWhere((lap) => fresh.contains(keyOf(lap)));
       _laps.addAll(laps);
       _lapsByDriver = lapsByDriver(_laps);
+      if (countsLaps) {
+        _lapTimeline = buildLapTimeline(_laps);
+        if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
+          totalLaps = _lapTimeline.last.lap; // The last lap anyone started
+        }
+      }
     } on ApiException {
-      // No lap times this time. The map and the order still work.
+      // The tracker works without laps: no counter and no times.
     }
   }
 
@@ -540,6 +672,30 @@ class TrackerController extends ChangeNotifier {
     _pitStops = await _quietly(() => _api.getPitStops(key), _pitStops);
     _messages = await _quietly(() => _api.getRaceControl(key), _messages);
     _weather = await _quietly(() => _api.getWeather(key), _weather);
+  }
+
+  /// Race and sprint replays: Jolpica's reason for each retirement, like
+  /// "Engine" or "Collision", by driver code (Chapter 52). It stays empty
+  /// when Jolpica has no results yet, and the notes just give the lap.
+  Future<void> _loadStatuses() async {
+    if (!countsLaps || mode == TrackerMode.live) return;
+    try {
+      final api = JolpicaApi();
+      final season = session.start.year;
+      final race = raceNear(
+        await api.getSchedule(season: '$season'),
+        session.start,
+      );
+      if (race == null) return;
+      final results = session.name == 'Sprint'
+          ? await api.getSprintResults(season, race.round)
+          : await api.getResults(season, race.round);
+      _statusByCode = {
+        for (final result in results) result.driver.code: result.status,
+      };
+    } catch (_) {
+      // No reasons from Jolpica. Race control may still explain.
+    }
   }
 
   /// Runs [download]. If it fails, keeps [fallback], what we had before.

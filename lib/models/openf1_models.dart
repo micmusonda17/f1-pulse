@@ -119,12 +119,14 @@ class CarLocation {
     required this.date,
     required this.x,
     required this.y,
+    this.z = 0,
   });
 
   final int driverNumber;
   final DateTime date;
   final double x;
   final double y;
+  final double z; // Height above sea level, for the 3D view (Chapter 55)
 
   factory CarLocation.fromJson(Map<String, dynamic> json) {
     return CarLocation(
@@ -132,6 +134,7 @@ class CarLocation {
       date: DateTime.parse(json['date'] as String),
       x: (json['x'] as num).toDouble(),
       y: (json['y'] as num).toDouble(),
+      z: (json['z'] as num?)?.toDouble() ?? 0,
     );
   }
 }
@@ -260,6 +263,9 @@ class RaceControlMessage {
     this.flag,
     this.qualifyingPhase,
     this.lapNumber,
+    this.driverNumber,
+    this.scope,
+    this.sector,
   });
 
   final DateTime date;
@@ -268,6 +274,9 @@ class RaceControlMessage {
   final String? flag; // "YELLOW", "RED", "CHEQUERED"... Null if not a flag
   final int? qualifyingPhase; // 1, 2 or 3 in qualifying, otherwise null
   final int? lapNumber; // The race's lap when it was sent
+  final int? driverNumber; // The car it is about, if it is about one
+  final String? scope; // "Track", "Sector" or "Driver"
+  final int? sector; // Which marshal sector, for a sector flag
 
   factory RaceControlMessage.fromJson(Map<String, dynamic> json) {
     return RaceControlMessage(
@@ -277,6 +286,9 @@ class RaceControlMessage {
       flag: json['flag'] as String?,
       qualifyingPhase: json['qualifying_phase'] as int?,
       lapNumber: json['lap_number'] as int?,
+      driverNumber: json['driver_number'] as int?,
+      scope: json['scope'] as String?,
+      sector: json['sector'] as int?,
     );
   }
 }
@@ -288,12 +300,18 @@ class WeatherReading {
     required this.airTemperature,
     required this.trackTemperature,
     required this.isRaining,
+    this.humidity,
+    this.windSpeed,
+    this.windDirection,
   });
 
   final DateTime date;
   final double airTemperature; // Degrees Celsius
   final double trackTemperature;
   final bool isRaining;
+  final double? humidity; // Percent (Chapter 53)
+  final double? windSpeed; // Metres a second
+  final int? windDirection; // Degrees: 0 is from the north, 90 the east
 
   factory WeatherReading.fromJson(Map<String, dynamic> json) {
     return WeatherReading(
@@ -301,6 +319,9 @@ class WeatherReading {
       airTemperature: (json['air_temperature'] as num?)?.toDouble() ?? 0,
       trackTemperature: (json['track_temperature'] as num?)?.toDouble() ?? 0,
       isRaining: ((json['rainfall'] as num?) ?? 0) > 0,
+      humidity: (json['humidity'] as num?)?.toDouble(),
+      windSpeed: (json['wind_speed'] as num?)?.toDouble(),
+      windDirection: (json['wind_direction'] as num?)?.toInt(),
     );
   }
 }

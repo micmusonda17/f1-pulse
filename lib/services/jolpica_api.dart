@@ -170,6 +170,17 @@ class JolpicaApi {
         .toList();
   }
 
+  /// The finishing order of one sprint. Empty for a weekend without one.
+  Future<List<RaceResult>> getSprintResults(int season, int round) async {
+    final data = await _get('$season/$round/sprint.json?limit=100');
+    final races = data['RaceTable']['Races'] as List<dynamic>;
+    if (races.isEmpty) return [];
+    final rows = races.first['SprintResults'] as List<dynamic>;
+    return rows
+        .map((row) => RaceResult.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// The round number of the latest race with results, or null before the
   /// first race of the season. "last" is a Jolpica shortcut.
   Future<int?> getLastRound(int season) async {

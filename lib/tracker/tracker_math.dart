@@ -277,7 +277,25 @@ WeatherReading? weatherAt(List<WeatherReading> readings, DateTime time) {
 /// timed lap: before the start, in the garage, or after the finish.
 Offset? positionFromLaps(List<Lap> laps, List<Offset> outline, DateTime time) {
   if (outline.length < 2) return null;
+  final fraction = lapProgressAt(laps, time);
+  if (fraction == null) return null;
 
+  // Where in the list, and how far from that point to the next.
+  final position = fraction * (outline.length - 1);
+  final index = position.floor();
+  final along = position - index;
+  final from = outline[index];
+  final to = outline[math.min(index + 1, outline.length - 1)];
+  return Offset(
+    from.dx + (to.dx - from.dx) * along,
+    from.dy + (to.dy - from.dy) * along,
+  );
+}
+
+/// How far through its lap a car is at [time], from 0.0 to 1.0, from its
+/// lap times alone. The 2D map and the 3D view (Chapter 55) both use it.
+/// Null between laps: in the pits, the garage, or after the finish.
+double? lapProgressAt(List<Lap> laps, DateTime time) {
   // Newest lap first: the car is on the last lap it had started.
   for (var i = laps.length - 1; i >= 0; i--) {
     final start = laps[i].start;
@@ -296,19 +314,8 @@ Offset? positionFromLaps(List<Lap> laps, List<Offset> outline, DateTime time) {
     if (end == null || !time.isBefore(end) || !end.isAfter(start)) {
       return null; // Between laps: in the pits, the garage, or finished
     }
-
-    // How far through the lap, from 0.0 to 1.0, and so where in the list.
-    final fraction = time.difference(start).inMicroseconds /
+    return time.difference(start).inMicroseconds /
         end.difference(start).inMicroseconds;
-    final position = fraction * (outline.length - 1);
-    final index = position.floor();
-    final along = position - index; // How far from this point to the next
-    final from = outline[index];
-    final to = outline[math.min(index + 1, outline.length - 1)];
-    return Offset(
-      from.dx + (to.dx - from.dx) * along,
-      from.dy + (to.dy - from.dy) * along,
-    );
   }
   return null;
 }

@@ -164,3 +164,15 @@ String formatOdds(double chance) {
 
 /// 0.25 as "25%", for rates like wins per start.
 String formatRate(double rate) => '${(rate * 100).round()}%';
+
+/// Where the wind comes from, as a compass point: 0 degrees is "N",
+/// 90 is "E", 225 is "SW".
+String compassPoint(int degrees) {
+  const points = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  final index = ((degrees % 360) / 45).round() % 8;
+  return points[index];
+}
+
+/// OpenF1 measures wind in metres a second. South Africa uses km/h.
+String formatWindSpeed(double metresPerSecond) =>
+    '${(metresPerSecond * 3.6).round()} km/h';

@@ -9,6 +9,16 @@ class F1Colors {
   static const Color surface = Color(0xFF1F1F27); // cards
   static const Color surfaceHigh = Color(0xFF2B2B36); // chips, dialogs
   static const Color muted = Color(0xFFA0A0AB); // secondary text
+
+  /// Tyre compounds in their TV colours: red soft, yellow medium, white
+  /// hard, green intermediate, blue wet.
+  static const Map<String, Color> tyres = {
+    'SOFT': Color(0xFFE10600),
+    'MEDIUM': Color(0xFFFFD12E),
+    'HARD': Color(0xFFF0F0F0),
+    'INTERMEDIATE': Color(0xFF43B02A),
+    'WET': Color(0xFF0067AD),
+  };
 }
 
 /// The font. Titillium Web is free (SIL Open Font License) and has the

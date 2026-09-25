@@ -15,11 +15,13 @@ class TrackPainter extends CustomPainter {
     required this.outline,
     required this.cars,
     required this.drivers,
+    this.outCars = const {},
   });
 
   final List<Offset> outline; // Track shape, in OpenF1 coordinates
   final Map<int, Offset> cars; // Driver number -> OpenF1 coordinates
   final Map<int, DriverInfo> drivers;
+  final Set<int> outCars; // Retired: grey, where they stopped (Chapter 52)
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -88,10 +90,13 @@ class TrackPainter extends CustomPainter {
     }
 
     // 4. Draw every car: a dot in the team colour and the driver's code.
+    //    A car that is out is grey.
     for (final entry in cars.entries) {
       final position = toScreen(entry.value);
       final driver = drivers[entry.key];
-      final colour = driver?.colour ?? Colors.grey;
+      final out = outCars.contains(entry.key);
+      final colour =
+          out ? Colors.grey.shade700 : (driver?.colour ?? Colors.grey);
 
       canvas.drawCircle(position, 7, Paint()..color = colour);
       canvas.drawCircle(
@@ -106,8 +111,8 @@ class TrackPainter extends CustomPainter {
       final label = TextPainter(
         text: TextSpan(
           text: driver?.acronym ?? '${entry.key}',
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: out ? Colors.white38 : Colors.white,
             fontSize: 10,
             fontWeight: FontWeight.bold,
           ),
