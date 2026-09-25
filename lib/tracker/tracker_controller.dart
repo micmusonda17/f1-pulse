@@ -1,17 +1,21 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show Offset;
+import 'dart:ui' show Color, Offset;
 
 import 'package:flutter/foundation.dart';
 
 import '../config.dart';
 import '../models/openf1_models.dart';
+import '../models/lap_timing.dart';
 import '../models/race.dart';
 import '../services/api_exception.dart';
+import '../services/driver_directory.dart';
 import '../services/jolpica_api.dart';
 import '../services/openf1_api.dart';
+import '../services/replay_archive.dart';
 import '../services/settings_store.dart';
 import '../stats/strategy.dart';
+import '../stats/timing_replay.dart';
 import 'race_status.dart';
 import 'track3d.dart';
 import 'tracker_math.dart';
@@ -29,11 +33,16 @@ class TrackerController extends ChangeNotifier {
     required this.session,
     required this.mode,
     this.saveData = false,
+    this.timingRace,
   }) : clock = mode == TrackerMode.live ? _liveClock() : session.start;
 
   final OpenF1Session session;
   final TrackerMode mode;
   final bool saveData; // Data saver: see placesCarsByLaps
+
+  /// A lap-by-lap replay of this race from Jolpica, instead of OpenF1
+  /// (Chapter 57). Null for a normal replay.
+  final Race? timingRace;
   final OpenF1Api _api = OpenF1Api.instance;
 
   // ------------------------------------------------------------------
@@ -50,8 +59,11 @@ class TrackerController extends ChangeNotifier {
   bool isPlaying = false;
   int speed = 1;
   int? totalLaps; // Replays only: how many laps the race had
+  bool offline = false; // Playing a copy saved on the phone (Chapter 56)
 
-  static const List<int> speeds = [1, 5, 10, 20];
+  /// Lap-by-lap replays are long and have no map, so they go faster.
+  List<int> get speeds =>
+      lapByLap ? const [1, 10, 30, 60] : const [1, 5, 10, 20];
 
   // ------------------------------------------------------------------
   // What we keep behind the scenes
@@ -67,6 +79,8 @@ class TrackerController extends ChangeNotifier {
   List<RaceControlMessage> _messages = [];
   List<WeatherReading> _weather = [];
   Map<String, String> _statusByCode = {}; // Jolpica: "LEC" -> "Engine"
+  DateTime? _knownChequered; // Lap-by-lap: when the winner finished
+  DateTime? _end; // Lap-by-lap: shortly after the flag, not two hours
   DateTime _lastLapPoll = DateTime(2000);
   DateTime? _loadedUntil; // Replay: we have car data up to here
   DateTime? _liveCursor; // Live: the newest car data we have
@@ -85,13 +99,28 @@ class TrackerController extends ChangeNotifier {
   /// How far into the session we are.
   Duration get elapsed => clock.difference(session.start);
 
-  /// How long the session is scheduled to last.
-  Duration get length => session.end.difference(session.start);
+  /// When the replay stops: the session's scheduled end.
+  DateTime get endTime => _end ?? session.end;
 
-  /// Data saver in a replay: place the cars from their lap times instead
-  /// of downloading their GPS positions (Chapter 43). Live always uses GPS,
-  /// because lap times only arrive once a lap is over.
-  bool get placesCarsByLaps => saveData && mode == TrackerMode.replay;
+  /// How long the session is scheduled to last.
+  Duration get length => endTime.difference(session.start);
+
+  /// A lap-by-lap replay from Jolpica (Chapter 57).
+  bool get lapByLap => timingRace != null;
+
+  /// Place the cars from their lap times instead of downloading their GPS
+  /// positions: in data saver (Chapter 43), a saved copy (Chapter 56) and
+  /// lap-by-lap (Chapter 57). Live always uses GPS, because lap times only
+  /// arrive once a lap is over.
+  bool get placesCarsByLaps =>
+      (saveData || offline || lapByLap) && mode == TrackerMode.replay;
+
+  /// False when there is nothing to draw a map with: lap-by-lap replays,
+  /// and saved copies without a track outline.
+  bool get hasMap => !(placesCarsByLaps && trackOutline.isEmpty);
+
+  /// True once there are race control messages to take flags from.
+  bool get hasFlags => _messages.isNotEmpty;
 
   /// Where every car is at [clock].
   Map<int, Offset> get carPositions {
@@ -254,6 +283,8 @@ class TrackerController extends ChangeNotifier {
 
   /// When the chequered flag came out, if it has (races only).
   DateTime? get _chequeredFlag {
+    final known = _knownChequered;
+    if (known != null) return known;
     for (final message in _messages) {
       if (message.flag == 'CHEQUERED') return message.date;
     }
@@ -350,6 +381,7 @@ class TrackerController extends ChangeNotifier {
   // ------------------------------------------------------------------
 
   Future<void> start() async {
+    if (lapByLap) return _startLapByLap();
     try {
       if (mode == TrackerMode.live) {
         _setMessage('Signing in to OpenF1');
@@ -404,6 +436,9 @@ class TrackerController extends ChangeNotifier {
       _notify();
       if (mode == TrackerMode.live) play(); // Live never pauses
     } on ApiException catch (e) {
+      // OpenF1 is locked (a session is live somewhere) or out of reach.
+      // A copy saved on the phone still plays (Chapter 56).
+      if (mode == TrackerMode.replay && await _loadSavedCopy()) return;
       error = e.message;
       isLoading = false;
       _notify();
@@ -532,8 +567,8 @@ class TrackerController extends ChangeNotifier {
       }
     } else {
       clock = clock.add(realTimePassed * speed);
-      if (!clock.isBefore(session.end)) {
-        clock = session.end;
+      if (!clock.isBefore(endTime)) {
+        clock = endTime;
         pause();
       }
       _loadMoreIfNeeded();
@@ -652,16 +687,122 @@ class TrackerController extends ChangeNotifier {
       final fresh = {for (final lap in laps) keyOf(lap)};
       _laps.removeWhere((lap) => fresh.contains(keyOf(lap)));
       _laps.addAll(laps);
-      _lapsByDriver = lapsByDriver(_laps);
-      if (countsLaps) {
-        _lapTimeline = buildLapTimeline(_laps);
-        if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
-          totalLaps = _lapTimeline.last.lap; // The last lap anyone started
-        }
-      }
+      _afterLaps();
     } on ApiException {
       // The tracker works without laps: no counter and no times.
     }
+  }
+
+  /// Everything worked out from the laps: per driver, the race's own lap
+  /// timeline, and how many laps the race had.
+  void _afterLaps() {
+    _lapsByDriver = lapsByDriver(_laps);
+    if (countsLaps) {
+      _lapTimeline = buildLapTimeline(_laps);
+      if (mode == TrackerMode.replay && _lapTimeline.isNotEmpty) {
+        totalLaps = _lapTimeline.last.lap; // The last lap anyone started
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Without OpenF1 (Chapters 56 and 57)
+  // ------------------------------------------------------------------
+
+  /// Plays the copy of this session saved on the phone, if there is one.
+  /// Cars are placed from lap times: a saved copy has no GPS for them.
+  Future<bool> _loadSavedCopy() async {
+    final saved = await ReplayArchive.instance.replayFor(session.sessionKey);
+    if (saved == null) return false;
+    offline = true;
+    error = null;
+    drivers = {for (final driver in saved.drivers) driver.number: driver};
+    _positions
+      ..clear()
+      ..addAll(saved.positions);
+    _laps
+      ..clear()
+      ..addAll(saved.laps);
+    _afterLaps();
+    _stints = saved.stints;
+    _pitStops = saved.pitStops;
+    _messages = saved.messages;
+    _weather = saved.weather;
+    final outline = saved.outline;
+    trackOutline = [for (final point in outline) Offset(point.x, point.y)];
+    trackOutline3d = [for (final point in outline) pointOf(point)];
+    await _loadStatuses(); // Jolpica never locks anyone out
+    isLoading = false;
+    message = null;
+    _notify();
+    return true;
+  }
+
+  /// A lap-by-lap replay from Jolpica: no map, tyres or flags, but the
+  /// order, the gaps, who is out and the pit stops, for any race, any time.
+  Future<void> _startLapByLap() async {
+    final race = timingRace!;
+    try {
+      final start = race.start;
+      if (start == null) {
+        throw const ApiException('This race has no start time yet.');
+      }
+      _setMessage('Loading the lap times');
+      final api = JolpicaApi();
+      final results = await api.getResults(race.season, race.round);
+      if (results.isEmpty) {
+        throw const ApiException('There are no results for this race yet.');
+      }
+      final timings = await api.getLapTimings(race.season, race.round);
+      if (timings.isEmpty) {
+        throw const ApiException('Jolpica has no lap times for this race.');
+      }
+      final stops = await _quietly(
+        () => api.getPitStopTimes(race.season, race.round),
+        const <JolpicaPitStop>[],
+      );
+      final replay = timingReplay(
+        start: start,
+        results: results,
+        timings: timings,
+        stops: stops,
+        colours: await _teamColours(),
+      );
+
+      drivers = replay.drivers;
+      _positions
+        ..clear()
+        ..addAll(replay.positions);
+      _laps
+        ..clear()
+        ..addAll(replay.laps);
+      _afterLaps();
+      _pitStops = replay.pitStops;
+      _statusByCode = replay.statusByCode;
+      _knownChequered = replay.chequered;
+      if (replay.chequered case final flag?) {
+        _end = flag.add(const Duration(minutes: 3));
+      }
+      isLoading = false;
+      message = null;
+      _notify();
+    } on ApiException catch (e) {
+      error = e.message;
+      isLoading = false;
+      _notify();
+    } catch (e) {
+      error = 'Something went wrong loading the lap times: $e';
+      isLoading = false;
+      _notify();
+    }
+  }
+
+  /// Team colours by driver code, from the driver directory (Chapter 33).
+  Future<Map<String, Color>> _teamColours() async {
+    final directory = await DriverDirectory.instance.load();
+    return {
+      for (final entry in directory.entries) entry.key: entry.value.colour,
+    };
   }
 
   /// Tyres, pit stops, race control and weather. Small downloads, and the

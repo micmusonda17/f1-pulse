@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
+import '../services/api_exception.dart';
 import '../services/openf1_api.dart';
+import '../services/replay_archive.dart';
 import '../stats/race_story.dart';
 import '../stats/strategy.dart';
 import '../theme.dart';
@@ -49,20 +51,47 @@ class _RaceAnalysisScreenState extends State<RaceAnalysisScreen> {
 
   bool get _isRace => widget.session.type == 'Race';
 
+  @override
+  void initState() {
+    super.initState();
+    ReplayArchive.instance.holdOff(); // Our downloads first (Chapter 56)
+  }
+
+  @override
+  void dispose() {
+    ReplayArchive.instance.release();
+    super.dispose();
+  }
+
   Future<AnalysisData> _load() async {
     final api = OpenF1Api.instance;
     final key = widget.session.sessionKey;
-    final drivers = await api.getDrivers(key);
-    final positions = await api.getPositions(key);
-    positions.sort((a, b) => a.date.compareTo(b.date));
-    return AnalysisData(
-      drivers: {for (final driver in drivers) driver.number: driver},
-      positions: positions,
-      laps: await api.getLaps(key),
-      pitStops: await api.getPitStops(key),
-      stints: await api.getStints(key),
-      messages: await api.getRaceControl(key),
-    );
+    try {
+      final drivers = await api.getDrivers(key);
+      final positions = await api.getPositions(key);
+      positions.sort((a, b) => a.date.compareTo(b.date));
+      return AnalysisData(
+        drivers: {for (final driver in drivers) driver.number: driver},
+        positions: positions,
+        laps: await api.getLaps(key),
+        pitStops: await api.getPitStops(key),
+        stints: await api.getStints(key),
+        messages: await api.getRaceControl(key),
+      );
+    } on ApiException {
+      // OpenF1 is locked or out of reach: the copy saved on the phone has
+      // everything the analysis needs (Chapter 56).
+      final saved = await ReplayArchive.instance.replayFor(key);
+      if (saved == null) rethrow;
+      return AnalysisData(
+        drivers: {for (final driver in saved.drivers) driver.number: driver},
+        positions: saved.positions,
+        laps: saved.laps,
+        pitStops: saved.pitStops,
+        stints: saved.stints,
+        messages: saved.messages,
+      );
+    }
   }
 
   void _retry() => setState(() => _data = _load());

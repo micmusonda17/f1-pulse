@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/openf1_models.dart';
+import '../models/race.dart';
 import '../services/app_preferences.dart';
+import '../services/replay_archive.dart';
 import '../services/settings_store.dart';
 import '../theme.dart';
 import '../tracker/race_status.dart';
@@ -18,10 +20,16 @@ import 'race_analysis_screen.dart';
 
 /// The map: the track and cars on top, the controls, then the running order.
 class TrackerScreen extends StatefulWidget {
-  const TrackerScreen({super.key, required this.session, required this.mode});
+  const TrackerScreen({
+    super.key,
+    required this.session,
+    required this.mode,
+    this.timingRace,
+  });
 
   final OpenF1Session session;
   final TrackerMode mode;
+  final Race? timingRace; // A lap-by-lap replay from Jolpica (Chapter 57)
 
   @override
   State<TrackerScreen> createState() => _TrackerScreenState();
@@ -43,9 +51,13 @@ class _TrackerScreenState extends State<TrackerScreen> {
       session: widget.session,
       mode: widget.mode,
       saveData: AppPreferences.instance.dataSaver,
+      timingRace: widget.timingRace,
     );
     _controller.start();
     _loadMyDrivers();
+    // Saving replays in the background waits while this one plays, so its
+    // downloads get OpenF1's queue to themselves (Chapter 56).
+    ReplayArchive.instance.holdOff();
   }
 
   /// Your favourite and fantasy drivers get a ring in the 3D view.
@@ -80,13 +92,16 @@ class _TrackerScreenState extends State<TrackerScreen> {
       builder: (sheetContext) => DriverSheet(
         controller: _controller,
         number: number,
-        onFollow: () {
-          Navigator.pop(sheetContext);
-          setState(() {
-            _follow = number;
-            _show3d = true;
-          });
-        },
+        // No map, nothing to follow: lap-by-lap replays (Chapter 57).
+        onFollow: !_controller.hasMap
+            ? null
+            : () {
+                Navigator.pop(sheetContext);
+                setState(() {
+                  _follow = number;
+                  _show3d = true;
+                });
+              },
       ),
     );
   }
@@ -111,6 +126,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
   @override
   void dispose() {
     _controller.dispose(); // Stops the clock and the downloads
+    ReplayArchive.instance.release();
     super.dispose();
   }
 
@@ -121,17 +137,19 @@ class _TrackerScreenState extends State<TrackerScreen> {
         title: Text(widget.session.title),
         actions: [
           // Sector times, and the story of a race (Chapters 50 and 51).
-          IconButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    RaceAnalysisScreen(session: widget.session),
+          // Not for lap-by-lap replays, which are not OpenF1 sessions.
+          if (widget.timingRace == null)
+            IconButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      RaceAnalysisScreen(session: widget.session),
+                ),
               ),
+              icon: const Icon(Icons.analytics_outlined),
+              tooltip: 'Lap times and analysis',
             ),
-            icon: const Icon(Icons.analytics_outlined),
-            tooltip: 'Lap times and analysis',
-          ),
           if (widget.mode == TrackerMode.live)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -178,97 +196,116 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
           return Column(
             children: [
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  // A Stack puts its children on top of each other: the map
-                  // first, then the badges in its corners.
-                  child: Stack(
+              // No map to draw (a lap-by-lap replay): just the lap.
+              if (!c.hasMap)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                  child: Row(
                     children: [
-                      if (_show3d)
-                        Track3DView(
-                          controller: c,
-                          follow: _follow,
-                          rings: _rings,
-                          outCars: out.keys.toSet(),
-                        )
-                      else
-                        CustomPaint(
-                          painter: TrackPainter(
-                            outline: c.trackOutline,
-                            cars: c.carPositions,
-                            drivers: c.drivers,
-                            outCars: out.keys.toSet(),
-                          ),
-                          child: const SizedBox.expand(),
-                        ),
                       if (lap != null)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          child: MapBadge(
-                            label: 'LAP ',
-                            value: '$lap',
-                            suffix: c.totalLaps == null
-                                ? null
-                                : '/${c.totalLaps}',
-                          ),
-                        ),
-                      if (timeLeft != null)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          child: MapBadge(
-                            label: 'TIME LEFT ',
-                            value: formatMinutes(timeLeft),
-                          ),
-                        ),
-                      if (phase != null)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          child: MapBadge(label: 'Q', value: '$phase'),
-                        ),
-                      // The flags, top right (Chapter 53).
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: TrackStatusBadge(state: c.trackState),
-                      ),
-                      // 2D or 3D, bottom left (Chapter 55).
-                      Positioned(
-                        left: 0,
-                        bottom: 0,
-                        child: OutlinedButton.icon(
-                          onPressed: _toggle3d,
-                          icon: Icon(
-                            _show3d ? Icons.map_outlined : Icons.view_in_ar,
-                            size: 18,
-                          ),
-                          label: Text(_show3d ? '2D' : '3D'),
-                        ),
-                      ),
-                      if (_show3d && _follow != null)
-                        Positioned(
-                          top: 40,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: InputChip(
-                              avatar: const Icon(Icons.videocam, size: 16),
-                              label: Text(
-                                'Following '
-                                '${c.drivers[_follow]?.acronym ?? '#$_follow'}',
-                              ),
-                              onDeleted: () => setState(() => _follow = null),
-                            ),
-                          ),
+                        MapBadge(
+                          label: 'LAP ',
+                          value: '$lap',
+                          suffix: c.totalLaps == null
+                              ? null
+                              : '/${c.totalLaps}',
                         ),
                     ],
                   ),
+                )
+              else
+                Expanded(
+                  flex: 5,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    // A Stack puts its children on top of each other: the map
+                    // first, then the badges in its corners.
+                    child: Stack(
+                      children: [
+                        if (_show3d)
+                          Track3DView(
+                            controller: c,
+                            follow: _follow,
+                            rings: _rings,
+                            outCars: out.keys.toSet(),
+                          )
+                        else
+                          CustomPaint(
+                            painter: TrackPainter(
+                              outline: c.trackOutline,
+                              cars: c.carPositions,
+                              drivers: c.drivers,
+                              outCars: out.keys.toSet(),
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        if (lap != null)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: MapBadge(
+                              label: 'LAP ',
+                              value: '$lap',
+                              suffix: c.totalLaps == null
+                                  ? null
+                                  : '/${c.totalLaps}',
+                            ),
+                          ),
+                        if (timeLeft != null)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: MapBadge(
+                              label: 'TIME LEFT ',
+                              value: formatMinutes(timeLeft),
+                            ),
+                          ),
+                        if (phase != null)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: MapBadge(label: 'Q', value: '$phase'),
+                          ),
+                        // The flags, top right (Chapter 53).
+                        if (c.hasFlags)
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: TrackStatusBadge(state: c.trackState),
+                          ),
+                        // 2D or 3D, bottom left (Chapter 55).
+                        Positioned(
+                          left: 0,
+                          bottom: 0,
+                          child: OutlinedButton.icon(
+                            onPressed: _toggle3d,
+                            icon: Icon(
+                              _show3d ? Icons.map_outlined : Icons.view_in_ar,
+                              size: 18,
+                            ),
+                            label: Text(_show3d ? '2D' : '3D'),
+                          ),
+                        ),
+                        if (_show3d && _follow != null)
+                          Positioned(
+                            top: 40,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: InputChip(
+                                avatar: const Icon(Icons.videocam, size: 16),
+                                label: Text(
+                                  'Following '
+                                  '${c.drivers[_follow]?.acronym ?? '#$_follow'}',
+                                ),
+                                onDeleted: () => setState(() => _follow = null),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
               SessionInfoStrip(
                 weather: c.weather,
                 fastestLap: fastest,
@@ -290,7 +327,13 @@ class _TrackerScreenState extends State<TrackerScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    'Data saver: cars placed from lap times, not GPS',
+                    c.lapByLap
+                        ? 'Lap-by-lap timing from Jolpica: no map, tyres '
+                            'or flags'
+                        : c.offline
+                            ? 'Saved on this phone: cars placed from lap '
+                                'times, not GPS'
+                            : 'Data saver: cars placed from lap times, not GPS',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: F1Colors.muted,
                     ),

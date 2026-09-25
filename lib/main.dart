@@ -12,10 +12,10 @@ import 'screens/welcome_screen.dart';
 import 'services/api_exception.dart';
 import 'services/app_preferences.dart';
 import 'services/jolpica_api.dart';
-import 'services/openf1_api.dart';
 import 'services/phone_cache.dart';
 import 'services/profile_store.dart';
 import 'services/race_alerts.dart';
+import 'services/replay_archive.dart';
 import 'theme.dart';
 import 'tracker/tracker_controller.dart';
 
@@ -33,12 +33,13 @@ void main() {
 final GlobalKey<NavigatorState> appNavigator = GlobalKey<NavigatorState>();
 
 /// Opens the replay a "replay is ready" alert points to. The payload is
-/// the session's start time, which is how findSession finds it.
+/// the session's start time, which is how findSession finds it. While
+/// OpenF1 is locked, a copy saved on the phone is found instead (Chapter 56).
 Future<void> openReplayFromAlert(String? payload) async {
   final start = DateTime.tryParse(payload ?? '');
   if (start == null) return; // A reminder: just opening the app is enough
   try {
-    final session = await OpenF1Api.instance.findSession(start);
+    final session = await findReplaySession(start);
     final navigator = appNavigator.currentState;
     if (session == null || navigator == null) return;
     navigator.push(
@@ -90,14 +91,37 @@ class StartGate extends StatefulWidget {
   State<StartGate> createState() => _StartGateState();
 }
 
-class _StartGateState extends State<StartGate> {
+// WidgetsBindingObserver: told when the app goes to the background and
+// comes back, so saved replays can catch up each time it is opened.
+class _StartGateState extends State<StartGate> with WidgetsBindingObserver {
   final ProfileStore _profiles = ProfileStore.instance;
   bool _ready = false; // False while we read what is saved on the phone
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _start();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Back from the background: save any sessions that finished meanwhile.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _saveReplays();
+  }
+
+  /// Saves past sessions on the phone for when OpenF1 is locked (Chapter
+  /// 56). It runs in the background, a few at a time, on Wi-Fi only.
+  void _saveReplays() {
+    if (AppPreferences.instance.saveReplays) {
+      ReplayArchive.instance.catchUp();
+    }
   }
 
   Future<void> _start() async {
@@ -106,8 +130,10 @@ class _StartGateState extends State<StartGate> {
     await _profiles.load();
     await AppPreferences.instance.load();
     await RaceAlerts.instance.init(onTap: openReplayFromAlert);
+    await ReplayArchive.instance.load();
     if (!mounted) return;
     setState(() => _ready = true);
+    _saveReplays();
 
     // Opened by tapping a "replay is ready" alert? Go straight to it.
     final payload = await RaceAlerts.instance.launchPayload();

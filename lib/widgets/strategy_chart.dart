@@ -31,7 +31,11 @@ class _StrategyChartState extends State<StrategyChart> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.strategies.every((strategy) => strategy.stints.isEmpty)) {
+    // Lap-by-lap replays (Chapter 57) have stops but no tyres: still worth
+    // a chart, in grey with the ticks.
+    if (widget.strategies.every(
+      (strategy) => strategy.stints.isEmpty && strategy.stops.isEmpty,
+    )) {
       return const Center(child: Text('No tyre data for this session yet.'));
     }
     return ListView(

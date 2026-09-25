@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../models/lap_timing.dart';
 import '../models/race.dart';
 import '../models/race_result.dart';
 import '../models/standing.dart';
@@ -52,7 +53,12 @@ class JolpicaApi {
   /// Gets one answer: a recent saved copy in data saver mode, otherwise a
   /// fresh download, and the saved copy if the download fails (no signal,
   /// or the server is down). A week-old calendar beats an error screen.
-  Future<Map<String, dynamic>> _get(String path) async {
+  /// [keepCopy] false skips the copies, for big answers like lap times.
+  Future<Map<String, dynamic>> _get(
+    String path, {
+    bool keepCopy = true,
+  }) async {
+    if (!keepCopy) return _fetch(path);
     final saved = await _readCopy(path);
     if (saved != null &&
         DateTime.now().difference(saved.savedAt) < reuseCopiesFor) {
@@ -264,6 +270,40 @@ class JolpicaApi {
       if (rowsOnPage == 0 || offset >= total) break;
     }
     return byRound;
+  }
+
+  /// Every driver's time on every lap of one race (Chapter 57). Jolpica
+  /// sends 100 timings at a time, and a race has over 1,000, so we page
+  /// through like _seasonRows. No saved copies: they would be big.
+  Future<List<LapTiming>> getLapTimings(int season, int round) async {
+    final timings = <LapTiming>[];
+    var offset = 0;
+    while (true) {
+      final data = await _get(
+        '$season/$round/laps.json?limit=100&offset=$offset',
+        keepCopy: false,
+      );
+      final races = data['RaceTable']['Races'] as List<dynamic>;
+      final page = races.isEmpty
+          ? <LapTiming>[]
+          : lapTimingsFrom(races.first['Laps'] as List<dynamic>);
+      timings.addAll(page);
+      final total = int.tryParse('${data['total']}') ?? 0;
+      offset += 100;
+      if (page.isEmpty || offset >= total) break;
+    }
+    return timings;
+  }
+
+  /// Every pit stop of one race: the lap and the time in the pit lane.
+  Future<List<JolpicaPitStop>> getPitStopTimes(int season, int round) async {
+    final data = await _get('$season/$round/pitstops.json?limit=100');
+    final races = data['RaceTable']['Races'] as List<dynamic>;
+    if (races.isEmpty) return [];
+    final rows = (races.first['PitStops'] as List<dynamic>?) ?? const [];
+    return rows
+        .map((row) => JolpicaPitStop.fromJson(row as Map<String, dynamic>))
+        .toList();
   }
 
   /// The qualifying order for one race. Empty until qualifying is over.

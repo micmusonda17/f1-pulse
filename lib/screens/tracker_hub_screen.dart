@@ -5,7 +5,9 @@ import '../models/race.dart';
 import '../services/api_exception.dart';
 import '../services/jolpica_api.dart';
 import '../services/openf1_api.dart';
+import '../services/replay_archive.dart';
 import '../services/settings_store.dart';
+import '../stats/timing_replay.dart';
 import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
 import '../widgets/common_widgets.dart';
@@ -26,6 +28,8 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
   late Future<List<OpenF1Session>> _sessions;
   String _kind = 'Race'; // Which chip is picked: an OpenF1 session type
   bool _checkingLive = false;
+  String? _offlineNote; // Why the list is not from OpenF1, when it is not
+  final Map<int, Race> _timingRaces = {}; // Made-up session key -> race
 
   /// The chips above the list: OpenF1's session type -> the chip's label.
   static const Map<String, String> _kinds = {
@@ -43,6 +47,8 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
   /// Every session from [_year] that has finished, newest first. The chips
   /// only filter this list, so switching chips needs no new download.
   Future<List<OpenF1Session>> _loadSessions() async {
+    _offlineNote = null;
+    _timingRaces.clear();
     try {
       final sessions = await _api.getSessions(_year);
       final finished =
@@ -54,6 +60,19 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
       // sponsor login, even for old races. In a browser that looks like
       // "no internet", so we check the calendar and say what is going on.
       final live = await _liveSession();
+
+      // The replays saved on the phone, and every race lap by lap from
+      // Jolpica, still work (Chapters 56 and 57).
+      final fallback = await _sessionsWithoutOpenF1();
+      if (fallback.isNotEmpty) {
+        final why = live == null
+            ? 'OpenF1 cannot be reached right now'
+            : '${live.name} is on, and OpenF1 only answers sponsors while '
+                'a session is live';
+        _offlineNote = '$why. Showing the replays saved on your phone, and '
+            'every race lap by lap from Jolpica.';
+        return fallback;
+      }
       if (live != null) {
         throw ApiException(
           '${live.name} is on right now. While a session is live, OpenF1 '
@@ -63,6 +82,32 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
       }
       rethrow; // Not a live session: keep the original message
     }
+  }
+
+  /// Without OpenF1: the sessions of [_year] saved on the phone, plus
+  /// every finished race that is not saved, as a lap-by-lap replay.
+  Future<List<OpenF1Session>> _sessionsWithoutOpenF1() async {
+    final archive = ReplayArchive.instance;
+    await archive.load();
+    final sessions = [
+      for (final session in archive.savedSessions)
+        if (session.start.year == _year) session,
+    ];
+    try {
+      final races = await JolpicaApi().getSchedule(season: '$_year');
+      for (final race in races) {
+        final start = race.start;
+        if (!race.isFinished || start == null) continue;
+        if (archive.findSaved(start) != null) continue; // Saved is better
+        final session = timingSessionFor(race);
+        _timingRaces[session.sessionKey] = race;
+        sessions.add(session);
+      }
+    } catch (_) {
+      // No calendar either: just what is saved.
+    }
+    sessions.sort((a, b) => b.start.compareTo(a.start));
+    return sessions;
   }
 
   /// The session on right now, from the Jolpica calendar (which never
@@ -82,11 +127,15 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
     });
   }
 
-  void _open(OpenF1Session session, TrackerMode mode) {
+  void _open(OpenF1Session session, TrackerMode mode, {Race? timingRace}) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => TrackerScreen(session: session, mode: mode),
+        builder: (context) => TrackerScreen(
+          session: session,
+          mode: mode,
+          timingRace: timingRace,
+        ),
       ),
     );
   }
@@ -234,24 +283,60 @@ class _TrackerHubScreenState extends State<TrackerHubScreen> {
                 final shown = (snapshot.data ?? [])
                     .where((session) => session.type == _kind)
                     .toList();
+                final note = _offlineNote;
                 if (shown.isEmpty) {
                   final label = _kinds[_kind]!.toLowerCase();
                   return Center(
-                    child: Text('No $label to replay in $_year yet.'),
+                    child: Text(
+                      note == null
+                          ? 'No $label to replay in $_year yet.'
+                          : 'No $label saved on your phone for $_year.',
+                      textAlign: TextAlign.center,
+                    ),
                   );
                 }
                 return ListView.builder(
-                  itemCount: shown.length,
+                  // One more row at the top for the note, when there is one.
+                  itemCount: shown.length + (note == null ? 0 : 1),
                   itemBuilder: (context, index) {
-                    final session = shown[index];
+                    if (note != null && index == 0) {
+                      return Card(
+                        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: ListTile(
+                          leading: const Icon(Icons.lock_clock_outlined),
+                          title: Text(note),
+                        ),
+                      );
+                    }
+                    final session = shown[index - (note == null ? 0 : 1)];
+                    final race = _timingRaces[session.sessionKey];
+                    final saved =
+                        ReplayArchive.instance.isSaved(session.sessionKey);
                     return ListTile(
                       leading: Icon(sessionIcon(session)),
                       title: Text(session.title),
                       subtitle: Text(
-                        '${session.country}  ·  ${formatDate(session.start)}',
+                        [
+                          session.country,
+                          formatDate(session.start),
+                          if (race != null)
+                            'Lap by lap'
+                          else if (saved)
+                            'Saved',
+                        ].join('  ·  '),
                       ),
-                      trailing: const Icon(Icons.play_circle_outline),
-                      onTap: () => _open(session, TrackerMode.replay),
+                      trailing: Icon(
+                        race != null
+                            ? Icons.format_list_numbered
+                            : saved
+                                ? Icons.download_done
+                                : Icons.play_circle_outline,
+                      ),
+                      onTap: () => _open(
+                        session,
+                        TrackerMode.replay,
+                        timingRace: race,
+                      ),
                     );
                   },
                 );

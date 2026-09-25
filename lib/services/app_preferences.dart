@@ -4,7 +4,7 @@ import 'jolpica_api.dart';
 import 'settings_store.dart';
 
 /// The switches in Settings that change how the whole app behaves: data
-/// saver, spoiler-free mode and the race weekend alerts.
+/// saver, spoiler-free mode, the race weekend alerts and saving replays.
 ///
 /// Many screens need them, so there is one shared copy ([instance]). It is
 /// a ChangeNotifier: flip a switch, and every screen listening redraws.
@@ -17,6 +17,9 @@ class AppPreferences extends ChangeNotifier {
   static const String _spoilerFreeKey = 'spoiler_free';
   static const String _remindersKey = 'session_reminders';
   static const String _replayAlertsKey = 'replay_alerts';
+  // Saved replays are on unless switched off, so the key is the other way
+  // round: a missing key means "off", which here means "save them".
+  static const String _noSavedReplaysKey = 'no_saved_replays';
 
   // late: only made the first time it is used (loading or saving). Tests
   // that just read a switch never touch the phone's storage, which does
@@ -27,6 +30,7 @@ class AppPreferences extends ChangeNotifier {
   bool spoilerFree = false;
   bool sessionReminders = false;
   bool replayAlerts = false;
+  bool saveReplays = true; // Chapter 56
 
   // Spoilers you chose to see, like 'standings'. Only until the app closes,
   // so next time everything starts hidden again.
@@ -39,6 +43,7 @@ class AppPreferences extends ChangeNotifier {
       spoilerFree = await _store.getFlag(_spoilerFreeKey);
       sessionReminders = await _store.getFlag(_remindersKey);
       replayAlerts = await _store.getFlag(_replayAlertsKey);
+      saveReplays = !await _store.getFlag(_noSavedReplaysKey);
     } catch (_) {
       // Could not read them: everything stays off.
     }
@@ -69,6 +74,12 @@ class AppPreferences extends ChangeNotifier {
     replayAlerts = on;
     notifyListeners();
     await _save(_replayAlertsKey, on);
+  }
+
+  Future<void> setSaveReplays(bool on) async {
+    saveReplays = on;
+    notifyListeners();
+    await _save(_noSavedReplaysKey, !on);
   }
 
   /// True if [topic] should be hidden: spoiler-free mode is on and you have

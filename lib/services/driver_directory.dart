@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/openf1_models.dart';
 import '../models/standing.dart';
 import 'openf1_api.dart';
+import 'replay_archive.dart';
 
 /// Photos and team colours for this season's drivers.
 ///
@@ -48,8 +49,26 @@ class DriverDirectory {
       return {};
     } catch (_) {
       _loading = null; // Forget the failure so the next screen tries again
-      return {}; // Missing photos are not worth an error screen
+      // While OpenF1 is locked, the newest replay saved on the phone still
+      // knows everyone's team colour and photo (Chapter 56).
+      return _fromSavedReplay();
     }
+  }
+
+  Future<Map<String, DriverInfo>> _fromSavedReplay() async {
+    try {
+      final archive = ReplayArchive.instance;
+      await archive.load();
+      for (final session in archive.savedSessions) {
+        final saved = await archive.replayFor(session.sessionKey);
+        if (saved != null && saved.drivers.isNotEmpty) {
+          return mergeDriverLists([saved.drivers]);
+        }
+      }
+    } catch (_) {
+      // Nothing saved either: codes and grey, which still works.
+    }
+    return {};
   }
 }
 

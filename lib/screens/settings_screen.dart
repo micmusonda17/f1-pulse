@@ -5,7 +5,9 @@ import '../services/app_preferences.dart';
 import '../services/openf1_api.dart';
 import '../services/profile_store.dart';
 import '../services/race_alerts.dart';
+import '../services/replay_archive.dart';
 import '../services/settings_store.dart';
+import '../theme.dart';
 import 'profiles_screen.dart';
 
 /// Where you enter an OpenF1 login for live data, plus the credits.
@@ -253,6 +255,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 16),
+          Text('Offline replays', style: theme.textTheme.titleMedium),
+          // Redraws as sessions are saved, and when the switch changes.
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              ReplayArchive.instance,
+              AppPreferences.instance,
+            ]),
+            builder: (context, _) => _buildOfflineReplays(),
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 16),
           Text('Live data (optional)', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           const Text(
@@ -325,6 +339,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  /// Replays saved on the phone, for while OpenF1 is closed during a live
+  /// session (Chapter 56).
+  Widget _buildOfflineReplays() {
+    final archive = ReplayArchive.instance;
+    final preferences = AppPreferences.instance;
+    if (!archive.isSupported) {
+      return const ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(Icons.download_outlined),
+        title: Text('Saving replays is in the iPhone app.'),
+      );
+    }
+    const small = TextStyle(fontSize: 12, color: F1Colors.muted);
+    final count = archive.savedSessions.length;
+    final megabytes = (archive.savedBytes / (1024 * 1024)).toStringAsFixed(1);
+    final status = archive.status;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Save past sessions'),
+          subtitle: const Text(
+            'Every finished session this season, saved on Wi-Fi a few at a '
+            'time, so replays still play while OpenF1 is closed during a '
+            'live session. About 1 MB each.',
+          ),
+          value: preferences.saveReplays,
+          onChanged: (on) async {
+            await preferences.setSaveReplays(on);
+            if (on) archive.catchUp();
+          },
+        ),
+        Text(
+          count == 1
+              ? '1 session saved, $megabytes MB'
+              : '$count sessions saved, $megabytes MB',
+        ),
+        if (status != null) Text(status, style: small),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: archive.isSaving
+                  ? null
+                  : () => archive.catchUp(anyNetwork: true),
+              icon: const Icon(Icons.download),
+              label: const Text('Save now'),
+            ),
+            TextButton.icon(
+              onPressed: count == 0 || archive.isSaving ? null : _deleteReplays,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete saved replays'),
+            ),
+          ],
+        ),
+        const Text(
+          'Save now also uses mobile data if you are not on Wi-Fi.',
+          style: small,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _deleteReplays() async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete saved replays?'),
+        content: const Text(
+          'They are saved again, on Wi-Fi, the next time Pitbeat opens, '
+          'unless you switch saving off.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (sure == true) await ReplayArchive.instance.deleteAll();
   }
 
   /// The four switches: two alerts, data saver and spoiler-free mode.

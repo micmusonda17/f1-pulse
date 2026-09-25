@@ -6,7 +6,8 @@ import '../models/race_result.dart';
 import '../services/api_exception.dart';
 import '../services/driver_directory.dart';
 import '../services/jolpica_api.dart';
-import '../services/openf1_api.dart';
+import '../services/replay_archive.dart';
+import '../stats/timing_replay.dart';
 import '../tracker/tracker_controller.dart';
 import '../utils/formatting.dart';
 import '../widgets/circuit_outline.dart';
@@ -49,13 +50,14 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
 
   /// Finds the session that started at [start] in OpenF1 (the race, or
   /// practice, qualifying or a sprint) and opens its replay, or with
-  /// [analysis], its lap times and story (Chapter 51).
+  /// [analysis], its lap times and story (Chapter 51). While OpenF1 is
+  /// locked, a copy saved on the phone is found instead (Chapter 56).
   Future<void> _openReplay(DateTime? start, {bool analysis = false}) async {
     if (start == null) return;
 
     setState(() => _findingReplay = true);
     try {
-      final session = await OpenF1Api.instance.findSession(start);
+      final session = await findReplaySession(start);
       // We waited, so the user might have left this screen. Check first.
       if (!mounted) return;
       if (session == null) {
@@ -71,10 +73,37 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
         ),
       );
     } on ApiException catch (e) {
-      if (mounted) _showMessage(e.message);
+      if (!mounted) return;
+      // OpenF1 is locked and this one is not saved. For the race itself,
+      // Jolpica's lap-by-lap timing always works (Chapter 57).
+      if (!analysis && start == widget.race.start) {
+        _showMessage(
+          'OpenF1 is closed while a session is live, and this race is not '
+          'saved on your phone yet. Here is the lap-by-lap timing instead.',
+        );
+        _openLapByLap();
+      } else {
+        _showMessage(e.message);
+      }
     } finally {
       if (mounted) setState(() => _findingReplay = false);
     }
+  }
+
+  /// The race, lap by lap, from Jolpica: it works even during a live
+  /// session (Chapter 57).
+  void _openLapByLap() {
+    final race = widget.race;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TrackerScreen(
+          session: timingSessionFor(race),
+          mode: TrackerMode.replay,
+          timingRace: race,
+        ),
+      ),
+    );
   }
 
   void _showMessage(String text) {
@@ -164,6 +193,15 @@ class _RaceDetailScreenState extends State<RaceDetailScreen> {
                     : () => _openReplay(race.start, analysis: true),
                 icon: const Icon(Icons.analytics_outlined),
                 label: const Text('Race story and lap times'),
+              ),
+            ),
+            // Always there, even while OpenF1 is locked (Chapter 57).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: TextButton.icon(
+                onPressed: _openLapByLap,
+                icon: const Icon(Icons.format_list_numbered),
+                label: const Text('Lap-by-lap timing'),
               ),
             ),
             const SectionHeader('Results'),

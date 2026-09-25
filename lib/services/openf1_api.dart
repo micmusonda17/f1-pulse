@@ -131,6 +131,10 @@ class OpenF1Api {
     throw const ApiException('OpenF1 is busy right now. Try again in a minute.');
   }
 
+  /// OpenF1's rows exactly as they arrive, for saving a replay on the
+  /// phone (Chapter 56). [pathAndQuery] is like 'laps?session_key=9161'.
+  Future<List<dynamic>> getRows(String pathAndQuery) => _get(pathAndQuery);
+
   /// OpenF1 wants times like 2026-09-13T13:10:00.000Z
   String _time(DateTime time) => time.toUtc().toIso8601String();
 
